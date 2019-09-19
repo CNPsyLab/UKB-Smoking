@@ -1,0 +1,1620 @@
+# Purpose: UK Biobank White Matter Data Processing and Analyses
+# Created by Joshua Gray (joshua.gray@usuhs.edu) and Chelsie Benca-Bachman (chelsie.benca@emory.edu)
+# NOTE: you will need to update file paths and file names. These are indicated by "FILEPATH".
+
+library(data.table)
+library(psych)
+library(moments)
+library(mice)
+
+#Load 4/2019 imaging covar
+img_cov <- read.table("FILEPATH", header=TRUE, sep="\t")
+#takes approximately 2 minutes to read in
+#started at 10:02am - finished by 10:04am
+head(img_cov)
+dim(img_cov) 
+
+##### Potentially Important Confounds #####
+# 25756	Scanner lateral (X) brain position ##
+# 25757	Scanner transverse (Y) brain position ##
+# 25758	Scanner longitudinal (Z) brain position ##
+# 25759	Scanner table position # not using for now
+
+##Additionals (JCG)
+# 25008-2.0 Volume of white matter
+
+###Load in DTI data
+#Load 4/2019 imaging covar
+DTIdata <- read.table("FILEPATH", header=TRUE, sep="\t")
+#takes approximately 2 minutes to read in
+#started at 10:02am - finished by 10:04am
+head(DTIdata)
+dim(DTIdata) 
+nrow(DTIdata[complete.cases(DTIdata),]) 
+
+##Merge imaging covar w/ DTI data
+all_img <- merge(img_cov,DTIdata,by="f.eid")
+
+##### Potential Phenotypes #####
+# ### DTI ### 
+#	25488.2.0	Weighted-mean FA in tract acoustic radiation (left)		
+#	25489.2.0	Weighted-mean FA in tract acoustic radiation (right)		
+#	25490.2.0	Weighted-mean FA in tract anterior thalamic radiation (left)		
+#	25491.2.0	Weighted-mean FA in tract anterior thalamic radiation (right)		
+#	25492.2.0	Weighted-mean FA in tract cingulate gyrus part of cingulum (left)		
+#	25493.2.0	Weighted-mean FA in tract cingulate gyrus part of cingulum (right)		
+#	25494.2.0	Weighted-mean FA in tract parahippocampal part of cingulum (left)		
+#	25495.2.0	Weighted-mean FA in tract parahippocampal part of cingulum (right)		
+#	25496.2.0	Weighted-mean FA in tract corticospinal tract (left)		
+#	25497.2.0	Weighted-mean FA in tract corticospinal tract (right)		
+#	25498.2.0	Weighted-mean FA in tract forceps major		
+#	25499.2.0	Weighted-mean FA in tract forceps minor		
+#	25500.2.0	Weighted-mean FA in tract inferior fronto-occipital fasciculus (left)		
+#	25501.2.0	Weighted-mean FA in tract inferior fronto-occipital fasciculus (right)		
+#	25502.2.0	Weighted-mean FA in tract inferior longitudinal fasciculus (left)		
+#	25503.2.0	Weighted-mean FA in tract inferior longitudinal fasciculus (right)		
+#	25504.2.0	Weighted-mean FA in tract middle cerebellar peduncle		
+#	25505.2.0	Weighted-mean FA in tract medial lemniscus (left)		
+#	25506.2.0	Weighted-mean FA in tract medial lemniscus (right)		
+#	25507.2.0	Weighted-mean FA in tract posterior thalamic radiation (left)		
+#	25508.2.0	Weighted-mean FA in tract posterior thalamic radiation (right)		
+#	25509.2.0	Weighted-mean FA in tract superior longitudinal fasciculus (left)		
+#	25510.2.0	Weighted-mean FA in tract superior longitudinal fasciculus (right)		
+#	25511.2.0	Weighted-mean FA in tract superior thalamic radiation (left)		
+#	25512.2.0	Weighted-mean FA in tract superior thalamic radiation (right)		
+#	25513.2.0	Weighted-mean FA in tract uncinate fasciculus (left)		
+#	25514.2.0	Weighted-mean FA in tract uncinate fasciculus (right)		
+#	25515.2.0	Weighted-mean MD in tract acoustic radiation (left)		
+#	25516.2.0	Weighted-mean MD in tract acoustic radiation (right)		
+#	25517.2.0	Weighted-mean MD in tract anterior thalamic radiation (left)		
+#	25518.2.0	Weighted-mean MD in tract anterior thalamic radiation (right)		
+#	25519.2.0	Weighted-mean MD in tract cingulate gyrus part of cingulum (left)		
+#	25520.2.0	Weighted-mean MD in tract cingulate gyrus part of cingulum (right)		
+#	25521.2.0	Weighted-mean MD in tract parahippocampal part of cingulum (left)		
+#	25522.2.0	Weighted-mean MD in tract parahippocampal part of cingulum (right)		
+#	25523.2.0	Weighted-mean MD in tract corticospinal tract (left)		
+#	25524.2.0	Weighted-mean MD in tract corticospinal tract (right)		
+#	25525.2.0	Weighted-mean MD in tract forceps major		
+#	25526.2.0	Weighted-mean MD in tract forceps minor		
+#	25527.2.0	Weighted-mean MD in tract inferior fronto-occipital fasciculus (left)		
+#	25528.2.0	Weighted-mean MD in tract inferior fronto-occipital fasciculus (right)		
+#	25529.2.0	Weighted-mean MD in tract inferior longitudinal fasciculus (left)		
+#	25530.2.0	Weighted-mean MD in tract inferior longitudinal fasciculus (right)		
+#	25531.2.0	Weighted-mean MD in tract middle cerebellar peduncle		
+#	25532.2.0	Weighted-mean MD in tract medial lemniscus (left)		
+#	25533.2.0	Weighted-mean MD in tract medial lemniscus (right)		
+#	25534.2.0	Weighted-mean MD in tract posterior thalamic radiation (left)		
+#	25535.2.0	Weighted-mean MD in tract posterior thalamic radiation (right)		
+#	25536.2.0	Weighted-mean MD in tract superior longitudinal fasciculus (left)		
+#	25537.2.0	Weighted-mean MD in tract superior longitudinal fasciculus (right)		
+#	25538.2.0	Weighted-mean MD in tract superior thalamic radiation (left)		
+#	25539.2.0	Weighted-mean MD in tract superior thalamic radiation (right)		
+#	25540.2.0	Weighted-mean MD in tract uncinate fasciculus (left)		
+#	25541.2.0	Weighted-mean MD in tract uncinate fasciculus (right)		
+
+
+#### Extract and create relevant phenotypes (48 regions x2 for FA/MD)
+
+T1_subset <- all_img[,c("f.eid","f.25008.2.0","f.25781.2.0","f.25756.2.0","f.25757.2.0","f.25758.2.0","f.25488.2.0",	"f.25489.2.0",	"f.25490.2.0",	"f.25491.2.0",	"f.25492.2.0",	"f.25493.2.0",	"f.25494.2.0",	"f.25495.2.0",	"f.25496.2.0",	"f.25497.2.0",	"f.25498.2.0",	"f.25499.2.0",	"f.25500.2.0",	"f.25501.2.0",	"f.25502.2.0",	"f.25503.2.0",	
+"f.25504.2.0",	"f.25505.2.0",	"f.25506.2.0",	"f.25507.2.0",	"f.25508.2.0",	"f.25509.2.0",	"f.25510.2.0",	"f.25511.2.0",	"f.25512.2.0",	"f.25513.2.0",	"f.25514.2.0",	"f.25515.2.0",	"f.25516.2.0",	"f.25517.2.0",	"f.25518.2.0",	"f.25519.2.0",	
+"f.25520.2.0",	"f.25521.2.0",	"f.25522.2.0",	"f.25523.2.0",	"f.25524.2.0",	"f.25525.2.0",	"f.25526.2.0",	"f.25527.2.0",	"f.25528.2.0",	"f.25529.2.0",	"f.25530.2.0",	"f.25531.2.0",	"f.25532.2.0",	"f.25533.2.0",	"f.25534.2.0",	"f.25535.2.0",	
+"f.25536.2.0",	"f.25537.2.0",	"f.25538.2.0",	"f.25539.2.0",	"f.25540.2.0",	"f.25541.2.0")]		              
+summary(T1_subset)
+nrow(T1_subset[complete.cases(T1_subset),]) 
+
+##READ IN PHENO from 4/2019
+#path from server
+setwd("FILEPATH")
+#I do not recommend loading this in via computer
+#read in pheno dataset 
+all_pheno <- fread("ukb29151.tab") #automatically detects header and separator
+
+##READ IN NEW COVAR from 6/2019
+setwd("FILEPATH")
+new_covar <- fread("ukb32996.tab")
+###Wrangle covar
+#Education
+table(new_covar$f.6138.2.0)
+#-7 = none of the above; -3 = prefer not to answer; 1 = college/univ; 2 = A/AS levels; 3 = O levels/GCSE; 4 = CSE; 5= NVQ; 6 = Nursing/teaching;
+#there are 6 columns, 0 contains 1-6 (and missing options), 1 contains 2-6, 2 contains 3-6, etc
+#only interested in if have college/univ degree (1)
+new_covar$f.6138.2.0[new_covar$f.6138.2.0==-3] <- NA
+new_covar$f.6138.2.0[new_covar$f.6138.2.0==-7] <- 0
+new_covar$f.6138.2.0[new_covar$f.6138.2.0>1] <- 0
+#Disease code
+
+#Blood pressure
+#94 <-A manual sphygmometer was used if the standard automated device could not be employed.
+#Average the two readings
+
+new_covar$DiaBP <- ifelse(new_covar$f.4079.2.0 > 0 & new_covar$f.4079.2.1 > 0, (new_covar$f.4079.2.0 + new_covar$f.4079.2.1)/2, NA)
+summary(new_covar$DiaBP)
+new_covar$DiaBP <- ifelse(is.na(new_covar$DiaBP), new_covar$f.4079.2.0,new_covar$DiaBP)
+summary(new_covar$DiaBP)
+new_covar$DiaBP <- ifelse(is.na(new_covar$DiaBP), new_covar$f.4079.2.1,new_covar$DiaBP)
+summary(new_covar$DiaBP)
+new_covar$DiaBP <- ifelse(is.na(new_covar$DiaBP) & new_covar$f.94.2.0 > 0 & new_covar$f.94.2.1 > 0 , (new_covar$f.94.2.0 + new_covar$f.94.2.1)/2,new_covar$DiaBP)
+summary(new_covar$DiaBP)
+new_covar$DiaBP <- ifelse(is.na(new_covar$DiaBP), new_covar$f.94.2.0,new_covar$DiaBP)
+summary(new_covar$DiaBP)
+new_covar$DiaBP <- ifelse(is.na(new_covar$DiaBP), new_covar$f.94.2.1,new_covar$DiaBP)
+summary(new_covar$DiaBP)
+
+new_covar$SysBP <- ifelse(new_covar$f.4080.2.0 > 0 & new_covar$f.4080.2.1 > 0, (new_covar$f.4080.2.0 + new_covar$f.4080.2.1)/2, NA)
+summary(new_covar$SysBP)
+new_covar$SysBP <- ifelse(is.na(new_covar$SysBP), new_covar$f.4080.2.0,new_covar$SysBP)
+summary(new_covar$SysBP)
+new_covar$SysBP <- ifelse(is.na(new_covar$SysBP), new_covar$f.4080.2.1,new_covar$SysBP)
+summary(new_covar$SysBP)
+new_covar$SysBP <- ifelse(is.na(new_covar$SysBP) & new_covar$f.93.2.0 > 0 & new_covar$f.93.2.1 > 0, (new_covar$f.93.2.0 + new_covar$f.93.2.1)/2, new_covar$SysBP)
+summary(new_covar$SysBP)
+new_covar$SysBP <- ifelse(is.na(new_covar$SysBP), new_covar$f.93.2.0,new_covar$SysBP)
+summary(new_covar$SysBP)
+new_covar$SysBP <- ifelse(is.na(new_covar$SysBP), new_covar$f.93.2.1,new_covar$SysBP)
+summary(new_covar$SysBP)
+
+grep("20002", names(new_covar), value = TRUE) #check for every illness column
+
+##DEMENTIA
+a=which(new_covar$f.20002.2.0 == 1263)  # at the first position in the array, who reported a dementia code (1263)?
+b=which(new_covar$f.20002.2.1 == 1263)  # at the second position
+c=which(new_covar$f.20002.2.2 == 1263)  # and so on to the maximum extent of 
+d=which(new_covar$f.20002.2.3 == 1263) 
+e=which(new_covar$f.20002.2.4 == 1263)  
+f=which(new_covar$f.20002.2.5 == 1263)  
+g=which(new_covar$f.20002.2.6 == 1263)  
+h=which(new_covar$f.20002.2.7 == 1263)  
+i=which(new_covar$f.20002.2.8 == 1263)  
+j=which(new_covar$f.20002.2.9 == 1263)  
+k=which(new_covar$f.20002.2.10 == 1263)  
+l=which(new_covar$f.20002.2.11 == 1263)   
+m=which(new_covar$f.20002.2.12 == 1263)  
+n=which(new_covar$f.20002.2.13 == 1263)  
+o=which(new_covar$f.20002.2.14 == 1263)   
+p=which(new_covar$f.20002.2.15 == 1263)  
+q=which(new_covar$f.20002.2.16 == 1263)  
+r=which(new_covar$f.20002.2.17 == 1263)   
+s=which(new_covar$f.20002.2.18 == 1263)  
+t=which(new_covar$f.20002.2.19 == 1263)  
+u=which(new_covar$f.20002.2.20 == 1263)  
+v=which(new_covar$f.20002.2.21 == 1263)  
+w=which(new_covar$f.20002.2.22 == 1263)  
+x=which(new_covar$f.20002.2.23 == 1263)  
+y=which(new_covar$f.20002.2.24 == 1263)  
+z=which(new_covar$f.20002.2.25 == 1263)  
+a1=which(new_covar$f.20002.2.26 == 1263)  
+b1=which(new_covar$f.20002.2.27 == 1263)  
+c1=which(new_covar$f.20002.2.28 == 1263)  
+d1=which(new_covar$f.20002.2.29 == 1263)   
+e1=which(new_covar$f.20002.2.30 == 1263)  
+f1=which(new_covar$f.20002.2.31 == 1263)  
+g1=which(new_covar$f.20002.2.32 == 1263)   
+h1=which(new_covar$f.20002.2.33 == 1263)
+
+##PARKINSONS
+i1=which(new_covar$f.20002.2.0 == 1262)  # at the first position in the array, who reported a parkinson's code (1262)?
+j1=which(new_covar$f.20002.2.1 == 1262)  # at the second position
+k1=which(new_covar$f.20002.2.2 == 1262)  # and so on to the maximum extent of 
+l1=which(new_covar$f.20002.2.3 == 1262) 
+m1=which(new_covar$f.20002.2.4 == 1262)  
+n1=which(new_covar$f.20002.2.5 == 1262)  
+o1=which(new_covar$f.20002.2.6 == 1262)  
+p1=which(new_covar$f.20002.2.7 == 1262)  
+q1=which(new_covar$f.20002.2.8 == 1262)  
+r1=which(new_covar$f.20002.2.9 == 1262)  
+s1=which(new_covar$f.20002.2.10 == 1262)  
+t1=which(new_covar$f.20002.2.11 == 1262)   
+u1=which(new_covar$f.20002.2.12 == 1262)  
+v1=which(new_covar$f.20002.2.13 == 1262)  
+w1=which(new_covar$f.20002.2.14 == 1262)   
+x1=which(new_covar$f.20002.2.15 == 1262)  
+y1=which(new_covar$f.20002.2.16 == 1262)  
+z1=which(new_covar$f.20002.2.17 == 1262)   
+a2=which(new_covar$f.20002.2.18 == 1262)  
+b2=which(new_covar$f.20002.2.19 == 1262)  
+c2=which(new_covar$f.20002.2.20 == 1262)  
+d2=which(new_covar$f.20002.2.21 == 1262)  
+e2=which(new_covar$f.20002.2.22 == 1262)  
+f2=which(new_covar$f.20002.2.23 == 1262)  
+g2=which(new_covar$f.20002.2.24 == 1262)  
+h2=which(new_covar$f.20002.2.25 == 1262)  
+i2=which(new_covar$f.20002.2.26 == 1262)  
+j2=which(new_covar$f.20002.2.27 == 1262)  
+k2=which(new_covar$f.20002.2.28 == 1262)  
+l2=which(new_covar$f.20002.2.29 == 1262)   
+m2=which(new_covar$f.20002.2.30 == 1262)  
+n2=which(new_covar$f.20002.2.31 == 1262)  
+o2=which(new_covar$f.20002.2.32 == 1262)   
+p2=which(new_covar$f.20002.2.33 == 1262)   
+
+##CHRONIC DEGENERATIVE NEUROLOGICAL
+q2=which(new_covar$f.20002.2.0 == 1258)  # at the first position in the array, who reported a chronic degenerative neurological code (1258)?
+r2=which(new_covar$f.20002.2.1 == 1258)  # at the second position
+s2=which(new_covar$f.20002.2.2 == 1258)  # and so on to the maximum extent of 
+t2=which(new_covar$f.20002.2.3 == 1258) 
+u2=which(new_covar$f.20002.2.4 == 1258)  
+v2=which(new_covar$f.20002.2.5 == 1258)  
+w2=which(new_covar$f.20002.2.6 == 1258)  
+x2=which(new_covar$f.20002.2.7 == 1258)  
+y2=which(new_covar$f.20002.2.8 == 1258)  
+z2=which(new_covar$f.20002.2.9 == 1258)  
+a3=which(new_covar$f.20002.2.10 == 1258)  
+b3=which(new_covar$f.20002.2.11 == 1258)   
+c3=which(new_covar$f.20002.2.12 == 1258)  
+d3=which(new_covar$f.20002.2.13 == 1258)  
+e3=which(new_covar$f.20002.2.14 == 1258)   
+f3=which(new_covar$f.20002.2.15 == 1258)  
+g3=which(new_covar$f.20002.2.16 == 1258)  
+h3=which(new_covar$f.20002.2.17 == 1258)   
+i3=which(new_covar$f.20002.2.18 == 1258)  
+j3=which(new_covar$f.20002.2.19 == 1258)  
+k3=which(new_covar$f.20002.2.20 == 1258)  
+l3=which(new_covar$f.20002.2.21 == 1258)  
+m3=which(new_covar$f.20002.2.22 == 1258)  
+n3=which(new_covar$f.20002.2.23 == 1258)  
+o3=which(new_covar$f.20002.2.24 == 1258)  
+p3=which(new_covar$f.20002.2.25 == 1258)  
+q3=which(new_covar$f.20002.2.26 == 1258)  
+r3=which(new_covar$f.20002.2.27 == 1258)  
+s3=which(new_covar$f.20002.2.28 == 1258)  
+t3=which(new_covar$f.20002.2.29 == 1258)   
+u3=which(new_covar$f.20002.2.30 == 1258)  
+v3=which(new_covar$f.20002.2.31 == 1258)  
+w3=which(new_covar$f.20002.2.32 == 1258)   
+x3=which(new_covar$f.20002.2.33 == 1258)
+
+##GUILLIAN-BARRE SYNDROME
+y3=which(new_covar$f.20002.2.0 == 1256)  # at the first position in the array, who reported a Guillian-Barre syndrome code (1256)?
+z3=which(new_covar$f.20002.2.1 == 1256)  # at the second position
+a4=which(new_covar$f.20002.2.2 == 1256)  # and so on to the maximum extent of 
+b4=which(new_covar$f.20002.2.3 == 1256) 
+c4=which(new_covar$f.20002.2.4 == 1256)  
+d4=which(new_covar$f.20002.2.5 == 1256)  
+e4=which(new_covar$f.20002.2.6 == 1256)  
+f4=which(new_covar$f.20002.2.7 == 1256)  
+g4=which(new_covar$f.20002.2.8 == 1256)  
+h4=which(new_covar$f.20002.2.9 == 1256)  
+i4=which(new_covar$f.20002.2.10 == 1256)  
+j4=which(new_covar$f.20002.2.11 == 1256)   
+k4=which(new_covar$f.20002.2.12 == 1256)  
+l4=which(new_covar$f.20002.2.13 == 1256)  
+m4=which(new_covar$f.20002.2.14 == 1256)   
+n4=which(new_covar$f.20002.2.15 == 1256)  
+o4=which(new_covar$f.20002.2.16 == 1256)  
+p4=which(new_covar$f.20002.2.17 == 1256)   
+q4=which(new_covar$f.20002.2.18 == 1256)  
+r4=which(new_covar$f.20002.2.19 == 1256)  
+s4=which(new_covar$f.20002.2.20 == 1256)  
+t4=which(new_covar$f.20002.2.21 == 1256)  
+u4=which(new_covar$f.20002.2.22 == 1256)  
+v4=which(new_covar$f.20002.2.23 == 1256)  
+w4=which(new_covar$f.20002.2.24 == 1256)  
+x4=which(new_covar$f.20002.2.25 == 1256)  
+y4=which(new_covar$f.20002.2.26 == 1256)  
+z4=which(new_covar$f.20002.2.27 == 1256)  
+a5=which(new_covar$f.20002.2.28 == 1256)  
+b5=which(new_covar$f.20002.2.29 == 1256)   
+c5=which(new_covar$f.20002.2.30 == 1256)  
+d5=which(new_covar$f.20002.2.31 == 1256)  
+e5=which(new_covar$f.20002.2.32 == 1256)   
+f5=which(new_covar$f.20002.2.33 == 1256)
+
+##MULTIPLE SCLEROSIS
+g5=which(new_covar$f.20002.2.0 == 1261)  # at the first position in the array, who reported a Multiple Sclerosis code (1261)?
+h5=which(new_covar$f.20002.2.1 == 1261)  # at the second position
+i5=which(new_covar$f.20002.2.2 == 1261)  # and so on to the maximum extent of 
+j5=which(new_covar$f.20002.2.3 == 1261) 
+k5=which(new_covar$f.20002.2.4 == 1261)  
+l5=which(new_covar$f.20002.2.5 == 1261)  
+m5=which(new_covar$f.20002.2.6 == 1261)  
+n5=which(new_covar$f.20002.2.7 == 1261)  
+o5=which(new_covar$f.20002.2.8 == 1261)  
+p5=which(new_covar$f.20002.2.9 == 1261)  
+q5=which(new_covar$f.20002.2.10 == 1261)  
+r5=which(new_covar$f.20002.2.11 == 1261)   
+s5=which(new_covar$f.20002.2.12 == 1261)  
+t5=which(new_covar$f.20002.2.13 == 1261)  
+u5=which(new_covar$f.20002.2.14 == 1261)   
+v5=which(new_covar$f.20002.2.15 == 1261)  
+w5=which(new_covar$f.20002.2.16 == 1261)  
+x5=which(new_covar$f.20002.2.17 == 1261)   
+y5=which(new_covar$f.20002.2.18 == 1261)  
+z5=which(new_covar$f.20002.2.19 == 1261)  
+a6=which(new_covar$f.20002.2.20 == 1261)  
+b6=which(new_covar$f.20002.2.21 == 1261)  
+c6=which(new_covar$f.20002.2.22 == 1261)  
+d6=which(new_covar$f.20002.2.23 == 1261)  
+e6=which(new_covar$f.20002.2.24 == 1261)  
+f6=which(new_covar$f.20002.2.25 == 1261)  
+g6=which(new_covar$f.20002.2.26 == 1261)  
+h6=which(new_covar$f.20002.2.27 == 1261)  
+i6=which(new_covar$f.20002.2.28 == 1261)  
+j6=which(new_covar$f.20002.2.29 == 1261)   
+k6=which(new_covar$f.20002.2.30 == 1261)  
+l6=which(new_covar$f.20002.2.31 == 1261)  
+m6=which(new_covar$f.20002.2.32 == 1261)   
+n6=which(new_covar$f.20002.2.33 == 1261)
+
+##OTHER DEMYELINATING DISEASE
+o6=which(new_covar$f.20002.2.0 == 1397)  # at the first position in the array, who reported an Other demyelinating disease code (1397)?
+p6=which(new_covar$f.20002.2.1 == 1397)  # at the second position
+q6=which(new_covar$f.20002.2.2 == 1397)  # and so on to the maximum extent of 
+r6=which(new_covar$f.20002.2.3 == 1397) 
+s6=which(new_covar$f.20002.2.4 == 1397)  
+t6=which(new_covar$f.20002.2.5 == 1397)  
+u6=which(new_covar$f.20002.2.6 == 1397)  
+v6=which(new_covar$f.20002.2.7 == 1397)  
+w6=which(new_covar$f.20002.2.8 == 1397)  
+x6=which(new_covar$f.20002.2.9 == 1397)  
+y6=which(new_covar$f.20002.2.10 == 1397)  
+z6=which(new_covar$f.20002.2.11 == 1397)   
+a7=which(new_covar$f.20002.2.12 == 1397)  
+b7=which(new_covar$f.20002.2.13 == 1397)  
+c7=which(new_covar$f.20002.2.14 == 1397)   
+d7=which(new_covar$f.20002.2.15 == 1397)  
+e7=which(new_covar$f.20002.2.16 == 1397)  
+f7=which(new_covar$f.20002.2.17 == 1397)   
+g7=which(new_covar$f.20002.2.18 == 1397)  
+h7=which(new_covar$f.20002.2.19 == 1397)  
+i7=which(new_covar$f.20002.2.20 == 1397)  
+j7=which(new_covar$f.20002.2.21 == 1397)  
+k7=which(new_covar$f.20002.2.22 == 1397)  
+l7=which(new_covar$f.20002.2.23 == 1397)  
+m7=which(new_covar$f.20002.2.24 == 1397)  
+n7=which(new_covar$f.20002.2.25 == 1397)  
+o7=which(new_covar$f.20002.2.26 == 1397)  
+p7=which(new_covar$f.20002.2.27 == 1397)  
+q7=which(new_covar$f.20002.2.28 == 1397)  
+r7=which(new_covar$f.20002.2.29 == 1397)   
+s7=which(new_covar$f.20002.2.30 == 1397)  
+t7=which(new_covar$f.20002.2.31 == 1397)  
+u7=which(new_covar$f.20002.2.32 == 1397)   
+v7=which(new_covar$f.20002.2.33 == 1397)
+
+##STROKE OR ISCHAEMIC STROKE
+w7=which(new_covar$f.20002.2.0 == 1081)  # at the first position in the array, who reported a Stroke or ischaemic stroke code (1081)?
+x7=which(new_covar$f.20002.2.1 == 1081)  # at the second position
+y7=which(new_covar$f.20002.2.2 == 1081)  # and so on to the maximum extent of 
+z7=which(new_covar$f.20002.2.3 == 1081) 
+a8=which(new_covar$f.20002.2.4 == 1081)  
+b8=which(new_covar$f.20002.2.5 == 1081)  
+c8=which(new_covar$f.20002.2.6 == 1081)  
+d8=which(new_covar$f.20002.2.7 == 1081)  
+e8=which(new_covar$f.20002.2.8 == 1081)  
+f8=which(new_covar$f.20002.2.9 == 1081)  
+g8=which(new_covar$f.20002.2.10 == 1081)  
+h8=which(new_covar$f.20002.2.11 == 1081)   
+i8=which(new_covar$f.20002.2.12 == 1081)  
+j8=which(new_covar$f.20002.2.13 == 1081)  
+k8=which(new_covar$f.20002.2.14 == 1081)   
+l8=which(new_covar$f.20002.2.15 == 1081)  
+m8=which(new_covar$f.20002.2.16 == 1081)  
+n8=which(new_covar$f.20002.2.17 == 1081)   
+o8=which(new_covar$f.20002.2.18 == 1081)  
+p8=which(new_covar$f.20002.2.19 == 1081)  
+q8=which(new_covar$f.20002.2.20 == 1081)  
+r8=which(new_covar$f.20002.2.21 == 1081)  
+s8=which(new_covar$f.20002.2.22 == 1081)  
+t8=which(new_covar$f.20002.2.23 == 1081)  
+u8=which(new_covar$f.20002.2.24 == 1081)  
+v8=which(new_covar$f.20002.2.25 == 1081)  
+w8=which(new_covar$f.20002.2.26 == 1081)  
+x8=which(new_covar$f.20002.2.27 == 1081)  
+y8=which(new_covar$f.20002.2.28 == 1081)  
+z8=which(new_covar$f.20002.2.29 == 1081)   
+a9=which(new_covar$f.20002.2.30 == 1081)  
+b9=which(new_covar$f.20002.2.31 == 1081)  
+c9=which(new_covar$f.20002.2.32 == 1081)   
+d9=which(new_covar$f.20002.2.33 == 1081)
+
+##BRAIN CANCER
+e9=which(new_covar$f.20002.2.0 == 1032)  # at the first position in the array, who reported a brain cancer code (1032)?
+f9=which(new_covar$f.20002.2.1 == 1032)  # at the second position
+g9=which(new_covar$f.20002.2.2 == 1032)  # and so on to the maximum extent of 
+h9=which(new_covar$f.20002.2.3 == 1032) 
+i9=which(new_covar$f.20002.2.4 == 1032)  
+j9=which(new_covar$f.20002.2.5 == 1032)  
+k9=which(new_covar$f.20002.2.6 == 1032)  
+l9=which(new_covar$f.20002.2.7 == 1032)  
+m9=which(new_covar$f.20002.2.8 == 1032)  
+n9=which(new_covar$f.20002.2.9 == 1032)  
+o9=which(new_covar$f.20002.2.10 == 1032)  
+p9=which(new_covar$f.20002.2.11 == 1032)   
+q9=which(new_covar$f.20002.2.12 == 1032)  
+r9=which(new_covar$f.20002.2.13 == 1032)  
+s9=which(new_covar$f.20002.2.14 == 1032)   
+t9=which(new_covar$f.20002.2.15 == 1032)  
+u9=which(new_covar$f.20002.2.16 == 1032)  
+v9=which(new_covar$f.20002.2.17 == 1032)   
+w9=which(new_covar$f.20002.2.18 == 1032)  
+x9=which(new_covar$f.20002.2.19 == 1032)  
+y9=which(new_covar$f.20002.2.20 == 1032)  
+z9=which(new_covar$f.20002.2.21 == 1032)  
+a10=which(new_covar$f.20002.2.22 == 1032)  
+b10=which(new_covar$f.20002.2.23 == 1032)  
+c10=which(new_covar$f.20002.2.24 == 1032)  
+d10=which(new_covar$f.20002.2.25 == 1032)  
+e10=which(new_covar$f.20002.2.26 == 1032)  
+f10=which(new_covar$f.20002.2.27 == 1032)  
+g10=which(new_covar$f.20002.2.28 == 1032)  
+h10=which(new_covar$f.20002.2.29 == 1032)   
+i10=which(new_covar$f.20002.2.30 == 1032)  
+j10=which(new_covar$f.20002.2.31 == 1032)  
+k10=which(new_covar$f.20002.2.32 == 1032)   
+l10=which(new_covar$f.20002.2.33 == 1032)
+
+##BRAIN HEMORRHAGE
+m10=which(new_covar$f.20002.2.0 == 1491)  # at the first position in the array, who reported a brain hemorrhage code (1491)?
+n10=which(new_covar$f.20002.2.1 == 1491)  # at the second position
+o10=which(new_covar$f.20002.2.2 == 1491)  # and so on to the maximum extent of 
+p10=which(new_covar$f.20002.2.3 == 1491) 
+q10=which(new_covar$f.20002.2.4 == 1491)  
+r10=which(new_covar$f.20002.2.5 == 1491)  
+s10=which(new_covar$f.20002.2.6 == 1491)  
+t10=which(new_covar$f.20002.2.7 == 1491)  
+u10=which(new_covar$f.20002.2.8 == 1491)  
+v10=which(new_covar$f.20002.2.9 == 1491)  
+w10=which(new_covar$f.20002.2.10 == 1491)  
+x10=which(new_covar$f.20002.2.11 == 1491)   
+y10=which(new_covar$f.20002.2.12 == 1491)  
+z10=which(new_covar$f.20002.2.13 == 1491)  
+a11=which(new_covar$f.20002.2.14 == 1491)   
+b11=which(new_covar$f.20002.2.15 == 1491)  
+c11=which(new_covar$f.20002.2.16 == 1491)  
+d11=which(new_covar$f.20002.2.17 == 1491)   
+e11=which(new_covar$f.20002.2.18 == 1491)  
+f11=which(new_covar$f.20002.2.19 == 1491)  
+g11=which(new_covar$f.20002.2.20 == 1491)  
+h11=which(new_covar$f.20002.2.21 == 1491)  
+i11=which(new_covar$f.20002.2.22 == 1491)  
+j11=which(new_covar$f.20002.2.23 == 1491)  
+k11=which(new_covar$f.20002.2.24 == 1491)  
+l11=which(new_covar$f.20002.2.25 == 1491)  
+m11=which(new_covar$f.20002.2.26 == 1491)  
+n11=which(new_covar$f.20002.2.27 == 1491)  
+o11=which(new_covar$f.20002.2.28 == 1491)  
+p11=which(new_covar$f.20002.2.29 == 1491)   
+q11=which(new_covar$f.20002.2.30 == 1491)  
+r11=which(new_covar$f.20002.2.31 == 1491)  
+s11=which(new_covar$f.20002.2.32 == 1491)   
+t11=which(new_covar$f.20002.2.33 == 1491)
+
+##BRAIN/INTRACRANIAL ABSCESS
+u11=which(new_covar$f.20002.2.0 == 1245)  # at the first position in the array, who reported a Brain/intracranial abscess code (1245)?
+v11=which(new_covar$f.20002.2.1 == 1245)  # at the second position
+w11=which(new_covar$f.20002.2.2 == 1245)  # and so on to the maximum extent of 
+x11=which(new_covar$f.20002.2.3 == 1245) 
+y11=which(new_covar$f.20002.2.4 == 1245)  
+z11=which(new_covar$f.20002.2.5 == 1245)  
+a12=which(new_covar$f.20002.2.6 == 1245)  
+b12=which(new_covar$f.20002.2.7 == 1245)  
+c12=which(new_covar$f.20002.2.8 == 1245)  
+d12=which(new_covar$f.20002.2.9 == 1245)  
+e12=which(new_covar$f.20002.2.10 == 1245)  
+f12=which(new_covar$f.20002.2.11 == 1245)   
+g12=which(new_covar$f.20002.2.12 == 1245)  
+h12=which(new_covar$f.20002.2.13 == 1245)  
+i12=which(new_covar$f.20002.2.14 == 1245)   
+j12=which(new_covar$f.20002.2.15 == 1245)  
+k12=which(new_covar$f.20002.2.16 == 1245)  
+l12=which(new_covar$f.20002.2.17 == 1245)   
+m12=which(new_covar$f.20002.2.18 == 1245)  
+n12=which(new_covar$f.20002.2.19 == 1245)  
+o12=which(new_covar$f.20002.2.20 == 1245)  
+p12=which(new_covar$f.20002.2.21 == 1245)  
+q12=which(new_covar$f.20002.2.22 == 1245)  
+r12=which(new_covar$f.20002.2.23 == 1245)  
+s12=which(new_covar$f.20002.2.24 == 1245)  
+t12=which(new_covar$f.20002.2.25 == 1245)  
+u12=which(new_covar$f.20002.2.26 == 1245)  
+v12=which(new_covar$f.20002.2.27 == 1245)  
+w12=which(new_covar$f.20002.2.28 == 1245)  
+x12=which(new_covar$f.20002.2.29 == 1245)   
+y12=which(new_covar$f.20002.2.30 == 1245)  
+z12=which(new_covar$f.20002.2.31 == 1245)  
+a13=which(new_covar$f.20002.2.32 == 1245)   
+b13=which(new_covar$f.20002.2.33 == 1245)
+
+##CEREBRAL ANEURYSM
+c13=which(new_covar$f.20002.2.0 == 1425)  # at the first position in the array, who reported a Cerebral aneurysm code (1425)?
+d13=which(new_covar$f.20002.2.1 == 1425)  # at the second position
+e13=which(new_covar$f.20002.2.2 == 1425)  # and so on to the maximum extent of 
+f13=which(new_covar$f.20002.2.3 == 1425) 
+g13=which(new_covar$f.20002.2.4 == 1425)  
+h13=which(new_covar$f.20002.2.5 == 1425)  
+i13=which(new_covar$f.20002.2.6 == 1425)  
+j13=which(new_covar$f.20002.2.7 == 1425)  
+k13=which(new_covar$f.20002.2.8 == 1425)  
+l13=which(new_covar$f.20002.2.9 == 1425)  
+m13=which(new_covar$f.20002.2.10 == 1425)  
+n13=which(new_covar$f.20002.2.11 == 1425)   
+o13=which(new_covar$f.20002.2.12 == 1425)  
+p13=which(new_covar$f.20002.2.13 == 1425)  
+q13=which(new_covar$f.20002.2.14 == 1425)   
+r13=which(new_covar$f.20002.2.15 == 1425)  
+s13=which(new_covar$f.20002.2.16 == 1425)  
+t13=which(new_covar$f.20002.2.17 == 1425)   
+u13=which(new_covar$f.20002.2.18 == 1425)  
+v13=which(new_covar$f.20002.2.19 == 1425)  
+w13=which(new_covar$f.20002.2.20 == 1425)  
+x13=which(new_covar$f.20002.2.21 == 1425)  
+y13=which(new_covar$f.20002.2.22 == 1425)  
+z13=which(new_covar$f.20002.2.23 == 1425)  
+a14=which(new_covar$f.20002.2.24 == 1425)  
+b14=which(new_covar$f.20002.2.25 == 1425)  
+c14=which(new_covar$f.20002.2.26 == 1425)  
+d14=which(new_covar$f.20002.2.27 == 1425)  
+e14=which(new_covar$f.20002.2.28 == 1425)  
+f14=which(new_covar$f.20002.2.29 == 1425)   
+g14=which(new_covar$f.20002.2.30 == 1425)  
+h14=which(new_covar$f.20002.2.31 == 1425)  
+i14=which(new_covar$f.20002.2.32 == 1425)   
+j14=which(new_covar$f.20002.2.33 == 1425)
+
+##CEREBRAL PALSY
+k14=which(new_covar$f.20002.2.0 == 1433)  # at the first position in the array, who reported a Cerebral palsy code (1433)?
+l14=which(new_covar$f.20002.2.1 == 1433)  # at the second position
+m14=which(new_covar$f.20002.2.2 == 1433)  # and so on to the maximum extent of 
+n14=which(new_covar$f.20002.2.3 == 1433) 
+o14=which(new_covar$f.20002.2.4 == 1433)  
+p14=which(new_covar$f.20002.2.5 == 1433)  
+q14=which(new_covar$f.20002.2.6 == 1433)  
+r14=which(new_covar$f.20002.2.7 == 1433)  
+s14=which(new_covar$f.20002.2.8 == 1433)  
+t14=which(new_covar$f.20002.2.9 == 1433)  
+u14=which(new_covar$f.20002.2.10 == 1433)  
+v14=which(new_covar$f.20002.2.11 == 1433)   
+w14=which(new_covar$f.20002.2.12 == 1433)  
+x14=which(new_covar$f.20002.2.13 == 1433)  
+y14=which(new_covar$f.20002.2.14 == 1433)   
+z14=which(new_covar$f.20002.2.15 == 1433)  
+a15=which(new_covar$f.20002.2.16 == 1433)  
+b15=which(new_covar$f.20002.2.17 == 1433)   
+c15=which(new_covar$f.20002.2.18 == 1433)  
+d15=which(new_covar$f.20002.2.19 == 1433)  
+e15=which(new_covar$f.20002.2.20 == 1433)  
+f15=which(new_covar$f.20002.2.21 == 1433)  
+g15=which(new_covar$f.20002.2.22 == 1433)  
+h15=which(new_covar$f.20002.2.23 == 1433)  
+i15=which(new_covar$f.20002.2.24 == 1433)  
+j15=which(new_covar$f.20002.2.25 == 1433)  
+k15=which(new_covar$f.20002.2.26 == 1433)  
+l15=which(new_covar$f.20002.2.27 == 1433)  
+m15=which(new_covar$f.20002.2.28 == 1433)  
+n15=which(new_covar$f.20002.2.29 == 1433)   
+o15=which(new_covar$f.20002.2.30 == 1433)  
+p15=which(new_covar$f.20002.2.31 == 1433)  
+q15=which(new_covar$f.20002.2.32 == 1433)   
+r15=which(new_covar$f.20002.2.33 == 1433)
+
+##ENCEPHALITIS
+s15=which(new_covar$f.20002.2.0 == 1246)  # at the first position in the array, who reported an Encephalitis code (1246)?
+t15=which(new_covar$f.20002.2.1 == 1246)  # at the second position
+u15=which(new_covar$f.20002.2.2 == 1246)  # and so on to the maximum extent of 
+v15=which(new_covar$f.20002.2.3 == 1246) 
+w15=which(new_covar$f.20002.2.4 == 1246)  
+x15=which(new_covar$f.20002.2.5 == 1246)  
+y15=which(new_covar$f.20002.2.6 == 1246)  
+z15=which(new_covar$f.20002.2.7 == 1246)  
+a16=which(new_covar$f.20002.2.8 == 1246)  
+b16=which(new_covar$f.20002.2.9 == 1246)  
+c16=which(new_covar$f.20002.2.10 == 1246)  
+d16=which(new_covar$f.20002.2.11 == 1246)   
+e16=which(new_covar$f.20002.2.12 == 1246)  
+f16=which(new_covar$f.20002.2.13 == 1246)  
+g16=which(new_covar$f.20002.2.14 == 1246)   
+h16=which(new_covar$f.20002.2.15 == 1246)  
+i16=which(new_covar$f.20002.2.16 == 1246)  
+j16=which(new_covar$f.20002.2.17 == 1246)   
+k16=which(new_covar$f.20002.2.18 == 1246)  
+l16=which(new_covar$f.20002.2.19 == 1246)  
+m16=which(new_covar$f.20002.2.20 == 1246)  
+n16=which(new_covar$f.20002.2.21 == 1246)  
+o16=which(new_covar$f.20002.2.22 == 1246)  
+p16=which(new_covar$f.20002.2.23 == 1246)  
+q16=which(new_covar$f.20002.2.24 == 1246)  
+r16=which(new_covar$f.20002.2.25 == 1246)  
+s16=which(new_covar$f.20002.2.26 == 1246)  
+t16=which(new_covar$f.20002.2.27 == 1246)  
+u16=which(new_covar$f.20002.2.28 == 1246)  
+v16=which(new_covar$f.20002.2.29 == 1246)   
+w16=which(new_covar$f.20002.2.30 == 1246)  
+x16=which(new_covar$f.20002.2.31 == 1246)  
+y16=which(new_covar$f.20002.2.32 == 1246)   
+z16=which(new_covar$f.20002.2.33 == 1246)
+
+##EPILEPSY
+a17=which(new_covar$f.20002.2.0 == 1264)  # at the first position in the array, who reported an epilepsy code (1264)?
+b17=which(new_covar$f.20002.2.1 == 1264)  # at the second position
+c17=which(new_covar$f.20002.2.2 == 1264)  # and so on to the maximum extent of 
+d17=which(new_covar$f.20002.2.3 == 1264) 
+e17=which(new_covar$f.20002.2.4 == 1264)  
+f17=which(new_covar$f.20002.2.5 == 1264)  
+g17=which(new_covar$f.20002.2.6 == 1264)  
+h17=which(new_covar$f.20002.2.7 == 1264)  
+i17=which(new_covar$f.20002.2.8 == 1264)  
+j17=which(new_covar$f.20002.2.9 == 1264)  
+k17=which(new_covar$f.20002.2.10 == 1264)  
+l17=which(new_covar$f.20002.2.11 == 1264)   
+m17=which(new_covar$f.20002.2.12 == 1264)  
+n17=which(new_covar$f.20002.2.13 == 1264)  
+o17=which(new_covar$f.20002.2.14 == 1264)   
+p17=which(new_covar$f.20002.2.15 == 1264)  
+q17=which(new_covar$f.20002.2.16 == 1264)  
+r17=which(new_covar$f.20002.2.17 == 1264)   
+s17=which(new_covar$f.20002.2.18 == 1264)  
+t17=which(new_covar$f.20002.2.19 == 1264)  
+u17=which(new_covar$f.20002.2.20 == 1264)  
+v17=which(new_covar$f.20002.2.21 == 1264)  
+w17=which(new_covar$f.20002.2.22 == 1264)  
+x17=which(new_covar$f.20002.2.23 == 1264)  
+y17=which(new_covar$f.20002.2.24 == 1264)  
+z17=which(new_covar$f.20002.2.25 == 1264)  
+a18=which(new_covar$f.20002.2.26 == 1264)  
+b18=which(new_covar$f.20002.2.27 == 1264)  
+c18=which(new_covar$f.20002.2.28 == 1264)  
+d18=which(new_covar$f.20002.2.29 == 1264)   
+e18=which(new_covar$f.20002.2.30 == 1264)  
+f18=which(new_covar$f.20002.2.31 == 1264)  
+g18=which(new_covar$f.20002.2.32 == 1264)   
+h18=which(new_covar$f.20002.2.33 == 1264)
+
+##HEAD INJURY
+i18=which(new_covar$f.20002.2.0 == 1266)  # at the first position in the array, who reported a head injury code (1266)?
+j18=which(new_covar$f.20002.2.1 == 1266)  # at the second position
+k18=which(new_covar$f.20002.2.2 == 1266)  # and so on to the maximum extent of 
+l18=which(new_covar$f.20002.2.3 == 1266) 
+m18=which(new_covar$f.20002.2.4 == 1266)  
+n18=which(new_covar$f.20002.2.5 == 1266)  
+o18=which(new_covar$f.20002.2.6 == 1266)  
+p18=which(new_covar$f.20002.2.7 == 1266)  
+q18=which(new_covar$f.20002.2.8 == 1266)  
+r18=which(new_covar$f.20002.2.9 == 1266)  
+s18=which(new_covar$f.20002.2.10 == 1266)  
+t18=which(new_covar$f.20002.2.11 == 1266)   
+u18=which(new_covar$f.20002.2.12 == 1266)  
+v18=which(new_covar$f.20002.2.13 == 1266)  
+w18=which(new_covar$f.20002.2.14 == 1266)   
+x18=which(new_covar$f.20002.2.15 == 1266)  
+y18=which(new_covar$f.20002.2.16 == 1266)  
+z18=which(new_covar$f.20002.2.17 == 1266)   
+a19=which(new_covar$f.20002.2.18 == 1266)  
+b19=which(new_covar$f.20002.2.19 == 1266)  
+c19=which(new_covar$f.20002.2.20 == 1266)  
+d19=which(new_covar$f.20002.2.21 == 1266)  
+e19=which(new_covar$f.20002.2.22 == 1266)  
+f19=which(new_covar$f.20002.2.23 == 1266)  
+g19=which(new_covar$f.20002.2.24 == 1266)  
+h19=which(new_covar$f.20002.2.25 == 1266)  
+i19=which(new_covar$f.20002.2.26 == 1266)  
+j19=which(new_covar$f.20002.2.27 == 1266)  
+k19=which(new_covar$f.20002.2.28 == 1266)  
+l19=which(new_covar$f.20002.2.29 == 1266)   
+m19=which(new_covar$f.20002.2.30 == 1266)  
+n19=which(new_covar$f.20002.2.31 == 1266)  
+o19=which(new_covar$f.20002.2.32 == 1266)   
+p19=which(new_covar$f.20002.2.33 == 1266)   
+
+##NERVOUS SYSTEM INFECTION
+q19=which(new_covar$f.20002.2.0 == 1244)  # at the first position in the array, who reported a nervous system infection code (1244)?
+r19=which(new_covar$f.20002.2.1 == 1244)  # at the second position
+s19=which(new_covar$f.20002.2.2 == 1244)  # and so on to the maximum extent of 
+t19=which(new_covar$f.20002.2.3 == 1244) 
+u19=which(new_covar$f.20002.2.4 == 1244)  
+v19=which(new_covar$f.20002.2.5 == 1244)  
+w19=which(new_covar$f.20002.2.6 == 1244)  
+x19=which(new_covar$f.20002.2.7 == 1244)  
+y19=which(new_covar$f.20002.2.8 == 1244)  
+z19=which(new_covar$f.20002.2.9 == 1244)  
+a20=which(new_covar$f.20002.2.10 == 1244)  
+b20=which(new_covar$f.20002.2.11 == 1244)   
+c20=which(new_covar$f.20002.2.12 == 1244)  
+d20=which(new_covar$f.20002.2.13 == 1244)  
+e20=which(new_covar$f.20002.2.14 == 1244)   
+f20=which(new_covar$f.20002.2.15 == 1244)  
+g20=which(new_covar$f.20002.2.16 == 1244)  
+h20=which(new_covar$f.20002.2.17 == 1244)   
+i20=which(new_covar$f.20002.2.18 == 1244)  
+j20=which(new_covar$f.20002.2.19 == 1244)  
+k20=which(new_covar$f.20002.2.20 == 1244)  
+l20=which(new_covar$f.20002.2.21 == 1244)  
+m20=which(new_covar$f.20002.2.22 == 1244)  
+n20=which(new_covar$f.20002.2.23 == 1244)  
+o20=which(new_covar$f.20002.2.24 == 1244)  
+p20=which(new_covar$f.20002.2.25 == 1244)  
+q20=which(new_covar$f.20002.2.26 == 1244)  
+r20=which(new_covar$f.20002.2.27 == 1244)  
+s20=which(new_covar$f.20002.2.28 == 1244)  
+t20=which(new_covar$f.20002.2.29 == 1244)   
+u20=which(new_covar$f.20002.2.30 == 1244)  
+v20=which(new_covar$f.20002.2.31 == 1244)  
+w20=which(new_covar$f.20002.2.32 == 1244)   
+x20=which(new_covar$f.20002.2.33 == 1244)
+
+##ISCHAEMIC STROKE
+y20=which(new_covar$f.20002.2.0 == 1583)  # at the first position in the array, who reported an ischaemic stroke code (1583)?
+z20=which(new_covar$f.20002.2.1 == 1583)  # at the second position
+a21=which(new_covar$f.20002.2.2 == 1583)  # and so on to the maximum extent of 
+b21=which(new_covar$f.20002.2.3 == 1583) 
+c21=which(new_covar$f.20002.2.4 == 1583)  
+d21=which(new_covar$f.20002.2.5 == 1583)  
+e21=which(new_covar$f.20002.2.6 == 1583)  
+f21=which(new_covar$f.20002.2.7 == 1583)  
+g21=which(new_covar$f.20002.2.8 == 1583)  
+h21=which(new_covar$f.20002.2.9 == 1583)  
+i21=which(new_covar$f.20002.2.10 == 1583)  
+j21=which(new_covar$f.20002.2.11 == 1583)   
+k21=which(new_covar$f.20002.2.12 == 1583)  
+l21=which(new_covar$f.20002.2.13 == 1583)  
+m21=which(new_covar$f.20002.2.14 == 1583)   
+n21=which(new_covar$f.20002.2.15 == 1583)  
+o21=which(new_covar$f.20002.2.16 == 1583)  
+p21=which(new_covar$f.20002.2.17 == 1583)   
+q21=which(new_covar$f.20002.2.18 == 1583)  
+r21=which(new_covar$f.20002.2.19 == 1583)  
+s21=which(new_covar$f.20002.2.20 == 1583)  
+t21=which(new_covar$f.20002.2.21 == 1583)  
+u21=which(new_covar$f.20002.2.22 == 1583)  
+v21=which(new_covar$f.20002.2.23 == 1583)  
+w21=which(new_covar$f.20002.2.24 == 1583)  
+x21=which(new_covar$f.20002.2.25 == 1583)  
+y21=which(new_covar$f.20002.2.26 == 1583)  
+z21=which(new_covar$f.20002.2.27 == 1583)  
+a22=which(new_covar$f.20002.2.28 == 1583)  
+b22=which(new_covar$f.20002.2.29 == 1583)   
+c22=which(new_covar$f.20002.2.30 == 1583)  
+d22=which(new_covar$f.20002.2.31 == 1583)  
+e22=which(new_covar$f.20002.2.32 == 1583)   
+f22=which(new_covar$f.20002.2.33 == 1583)
+
+##MENINGEAL CANCER
+g22=which(new_covar$f.20002.2.0 == 1031)  # at the first position in the array, who reported a meningeal cancer code (1031)?
+h22=which(new_covar$f.20002.2.1 == 1031)  # at the second position
+i22=which(new_covar$f.20002.2.2 == 1031)  # and so on to the maximum extent of 
+j22=which(new_covar$f.20002.2.3 == 1031) 
+k22=which(new_covar$f.20002.2.4 == 1031)  
+l22=which(new_covar$f.20002.2.5 == 1031)  
+m22=which(new_covar$f.20002.2.6 == 1031)  
+n22=which(new_covar$f.20002.2.7 == 1031)  
+o22=which(new_covar$f.20002.2.8 == 1031)  
+p22=which(new_covar$f.20002.2.9 == 1031)  
+q22=which(new_covar$f.20002.2.10 == 1031)  
+r22=which(new_covar$f.20002.2.11 == 1031)   
+s22=which(new_covar$f.20002.2.12 == 1031)  
+t22=which(new_covar$f.20002.2.13 == 1031)  
+u22=which(new_covar$f.20002.2.14 == 1031)   
+v22=which(new_covar$f.20002.2.15 == 1031)  
+w22=which(new_covar$f.20002.2.16 == 1031)  
+x22=which(new_covar$f.20002.2.17 == 1031)   
+y22=which(new_covar$f.20002.2.18 == 1031)  
+z22=which(new_covar$f.20002.2.19 == 1031)  
+a23=which(new_covar$f.20002.2.20 == 1031)  
+b23=which(new_covar$f.20002.2.21 == 1031)  
+c23=which(new_covar$f.20002.2.22 == 1031)  
+d23=which(new_covar$f.20002.2.23 == 1031)  
+e23=which(new_covar$f.20002.2.24 == 1031)  
+f23=which(new_covar$f.20002.2.25 == 1031)  
+g23=which(new_covar$f.20002.2.26 == 1031)  
+h23=which(new_covar$f.20002.2.27 == 1031)  
+i23=which(new_covar$f.20002.2.28 == 1031)  
+j23=which(new_covar$f.20002.2.29 == 1031)   
+k23=which(new_covar$f.20002.2.30 == 1031)  
+l23=which(new_covar$f.20002.2.31 == 1031)  
+m23=which(new_covar$f.20002.2.32 == 1031)   
+n23=which(new_covar$f.20002.2.33 == 1031)
+
+##MENINGIOMA (BENIGN)
+o23=which(new_covar$f.20002.2.0 == 1659)  # at the first position in the array, who reported a meningioma (benign) code (1659)?
+p23=which(new_covar$f.20002.2.1 == 1659)  # at the second position
+q23=which(new_covar$f.20002.2.2 == 1659)  # and so on to the maximum extent of 
+r23=which(new_covar$f.20002.2.3 == 1659) 
+s23=which(new_covar$f.20002.2.4 == 1659)  
+t23=which(new_covar$f.20002.2.5 == 1659)  
+u23=which(new_covar$f.20002.2.6 == 1659)  
+v23=which(new_covar$f.20002.2.7 == 1659)  
+w23=which(new_covar$f.20002.2.8 == 1659)  
+x23=which(new_covar$f.20002.2.9 == 1659)  
+y23=which(new_covar$f.20002.2.10 == 1659)  
+z23=which(new_covar$f.20002.2.11 == 1659)   
+a24=which(new_covar$f.20002.2.12 == 1659)  
+b24=which(new_covar$f.20002.2.13 == 1659)  
+c24=which(new_covar$f.20002.2.14 == 1659)   
+d24=which(new_covar$f.20002.2.15 == 1659)  
+e24=which(new_covar$f.20002.2.16 == 1659)  
+f24=which(new_covar$f.20002.2.17 == 1659)   
+g24=which(new_covar$f.20002.2.18 == 1659)  
+h24=which(new_covar$f.20002.2.19 == 1659)  
+i24=which(new_covar$f.20002.2.20 == 1659)  
+j24=which(new_covar$f.20002.2.21 == 1659)  
+k24=which(new_covar$f.20002.2.22 == 1659)  
+l24=which(new_covar$f.20002.2.23 == 1659)  
+m24=which(new_covar$f.20002.2.24 == 1659)  
+n24=which(new_covar$f.20002.2.25 == 1659)  
+o24=which(new_covar$f.20002.2.26 == 1659)  
+p24=which(new_covar$f.20002.2.27 == 1659)  
+q24=which(new_covar$f.20002.2.28 == 1659)  
+r24=which(new_covar$f.20002.2.29 == 1659)   
+s24=which(new_covar$f.20002.2.30 == 1659)  
+t24=which(new_covar$f.20002.2.31 == 1659)  
+u24=which(new_covar$f.20002.2.32 == 1659)   
+v24=which(new_covar$f.20002.2.33 == 1659)
+
+##MENINGITIS
+w24=which(new_covar$f.20002.2.0 == 1247)  # at the first position in the array, who reported a meningitis code (1247)?
+x24=which(new_covar$f.20002.2.1 == 1247)  # at the second position
+y24=which(new_covar$f.20002.2.2 == 1247)  # and so on to the maximum extent of 
+z24=which(new_covar$f.20002.2.3 == 1247) 
+a25=which(new_covar$f.20002.2.4 == 1247)  
+b25=which(new_covar$f.20002.2.5 == 1247)  
+c25=which(new_covar$f.20002.2.6 == 1247)  
+d25=which(new_covar$f.20002.2.7 == 1247)  
+e25=which(new_covar$f.20002.2.8 == 1247)  
+f25=which(new_covar$f.20002.2.9 == 1247)  
+g25=which(new_covar$f.20002.2.10 == 1247)  
+h25=which(new_covar$f.20002.2.11 == 1247)   
+i25=which(new_covar$f.20002.2.12 == 1247)  
+j25=which(new_covar$f.20002.2.13 == 1247)  
+k25=which(new_covar$f.20002.2.14 == 1247)   
+l25=which(new_covar$f.20002.2.15 == 1247)  
+m25=which(new_covar$f.20002.2.16 == 1247)  
+n25=which(new_covar$f.20002.2.17 == 1247)   
+o25=which(new_covar$f.20002.2.18 == 1247)  
+p25=which(new_covar$f.20002.2.19 == 1247)  
+q25=which(new_covar$f.20002.2.20 == 1247)  
+r25=which(new_covar$f.20002.2.21 == 1247)  
+s25=which(new_covar$f.20002.2.22 == 1247)  
+t25=which(new_covar$f.20002.2.23 == 1247)  
+u25=which(new_covar$f.20002.2.24 == 1247)  
+v25=which(new_covar$f.20002.2.25 == 1247)  
+w25=which(new_covar$f.20002.2.26 == 1247)  
+x25=which(new_covar$f.20002.2.27 == 1247)  
+y25=which(new_covar$f.20002.2.28 == 1247)  
+z25=which(new_covar$f.20002.2.29 == 1247)   
+a26=which(new_covar$f.20002.2.30 == 1247)  
+b26=which(new_covar$f.20002.2.31 == 1247)  
+c26=which(new_covar$f.20002.2.32 == 1247)   
+d26=which(new_covar$f.20002.2.33 == 1247)
+
+##MOTOR NEURON DISEASE
+e26=which(new_covar$f.20002.2.0 == 1259)  # at the first position in the array, who reported a motor neuron disease code (1259)?
+f26=which(new_covar$f.20002.2.1 == 1259)  # at the second position
+g26=which(new_covar$f.20002.2.2 == 1259)  # and so on to the maximum extent of 
+h26=which(new_covar$f.20002.2.3 == 1259) 
+i26=which(new_covar$f.20002.2.4 == 1259)  
+j26=which(new_covar$f.20002.2.5 == 1259)  
+k26=which(new_covar$f.20002.2.6 == 1259)  
+l26=which(new_covar$f.20002.2.7 == 1259)  
+m26=which(new_covar$f.20002.2.8 == 1259)  
+n26=which(new_covar$f.20002.2.9 == 1259)  
+o26=which(new_covar$f.20002.2.10 == 1259)  
+p26=which(new_covar$f.20002.2.11 == 1259)   
+q26=which(new_covar$f.20002.2.12 == 1259)  
+r26=which(new_covar$f.20002.2.13 == 1259)  
+s26=which(new_covar$f.20002.2.14 == 1259)   
+t26=which(new_covar$f.20002.2.15 == 1259)  
+u26=which(new_covar$f.20002.2.16 == 1259)  
+v26=which(new_covar$f.20002.2.17 == 1259)   
+w26=which(new_covar$f.20002.2.18 == 1259)  
+x26=which(new_covar$f.20002.2.19 == 1259)  
+y26=which(new_covar$f.20002.2.20 == 1259)  
+z26=which(new_covar$f.20002.2.21 == 1259)  
+a27=which(new_covar$f.20002.2.22 == 1259)  
+b27=which(new_covar$f.20002.2.23 == 1259)  
+c27=which(new_covar$f.20002.2.24 == 1259)  
+d27=which(new_covar$f.20002.2.25 == 1259)  
+e27=which(new_covar$f.20002.2.26 == 1259)  
+f27=which(new_covar$f.20002.2.27 == 1259)  
+g27=which(new_covar$f.20002.2.28 == 1259)  
+h27=which(new_covar$f.20002.2.29 == 1259)   
+i27=which(new_covar$f.20002.2.30 == 1259)  
+j27=which(new_covar$f.20002.2.31 == 1259)  
+k27=which(new_covar$f.20002.2.32 == 1259)   
+l27=which(new_covar$f.20002.2.33 == 1259)
+
+##NEUROLOGICAL INJURY/TRAUMA
+m27=which(new_covar$f.20002.2.0 == 1240)  # at the first position in the array, who reported a neurological injury/trauma code (1240)?
+n27=which(new_covar$f.20002.2.1 == 1240)  # at the second position
+o27=which(new_covar$f.20002.2.2 == 1240)  # and so on to the maximum extent of 
+p27=which(new_covar$f.20002.2.3 == 1240) 
+q27=which(new_covar$f.20002.2.4 == 1240)  
+r27=which(new_covar$f.20002.2.5 == 1240)  
+s27=which(new_covar$f.20002.2.6 == 1240)  
+t27=which(new_covar$f.20002.2.7 == 1240)  
+u27=which(new_covar$f.20002.2.8 == 1240)  
+v27=which(new_covar$f.20002.2.9 == 1240)  
+w27=which(new_covar$f.20002.2.10 == 1240)  
+x27=which(new_covar$f.20002.2.11 == 1240)   
+y27=which(new_covar$f.20002.2.12 == 1240)  
+z27=which(new_covar$f.20002.2.13 == 1240)  
+a28=which(new_covar$f.20002.2.14 == 1240)   
+b28=which(new_covar$f.20002.2.15 == 1240)  
+c28=which(new_covar$f.20002.2.16 == 1240)  
+d28=which(new_covar$f.20002.2.17 == 1240)   
+e28=which(new_covar$f.20002.2.18 == 1240)  
+f28=which(new_covar$f.20002.2.19 == 1240)  
+g28=which(new_covar$f.20002.2.20 == 1240)  
+h28=which(new_covar$f.20002.2.21 == 1240)  
+i28=which(new_covar$f.20002.2.22 == 1240)  
+j28=which(new_covar$f.20002.2.23 == 1240)  
+k28=which(new_covar$f.20002.2.24 == 1240)  
+l28=which(new_covar$f.20002.2.25 == 1240)  
+m28=which(new_covar$f.20002.2.26 == 1240)  
+n28=which(new_covar$f.20002.2.27 == 1240)  
+o28=which(new_covar$f.20002.2.28 == 1240)  
+p28=which(new_covar$f.20002.2.29 == 1240)   
+q28=which(new_covar$f.20002.2.30 == 1240)  
+r28=which(new_covar$f.20002.2.31 == 1240)  
+s28=which(new_covar$f.20002.2.32 == 1240)   
+t28=which(new_covar$f.20002.2.33 == 1240)
+
+##SPINA BIFIDA
+u28=which(new_covar$f.20002.2.0 == 1524)  # at the first position in the array, who reported a spina bifida code (1524)?
+v28=which(new_covar$f.20002.2.1 == 1524)  # at the second position
+w28=which(new_covar$f.20002.2.2 == 1524)  # and so on to the maximum extent of 
+x28=which(new_covar$f.20002.2.3 == 1524) 
+y28=which(new_covar$f.20002.2.4 == 1524)  
+z28=which(new_covar$f.20002.2.5 == 1524)  
+a29=which(new_covar$f.20002.2.6 == 1524)  
+b29=which(new_covar$f.20002.2.7 == 1524)  
+c29=which(new_covar$f.20002.2.8 == 1524)  
+d29=which(new_covar$f.20002.2.9 == 1524)  
+e29=which(new_covar$f.20002.2.10 == 1524)  
+f29=which(new_covar$f.20002.2.11 == 1524)   
+g29=which(new_covar$f.20002.2.12 == 1524)  
+h29=which(new_covar$f.20002.2.13 == 1524)  
+i29=which(new_covar$f.20002.2.14 == 1524)   
+j29=which(new_covar$f.20002.2.15 == 1524)  
+k29=which(new_covar$f.20002.2.16 == 1524)  
+l29=which(new_covar$f.20002.2.17 == 1524)   
+m29=which(new_covar$f.20002.2.18 == 1524)  
+n29=which(new_covar$f.20002.2.19 == 1524)  
+o29=which(new_covar$f.20002.2.20 == 1524)  
+p29=which(new_covar$f.20002.2.21 == 1524)  
+q29=which(new_covar$f.20002.2.22 == 1524)  
+r29=which(new_covar$f.20002.2.23 == 1524)  
+s29=which(new_covar$f.20002.2.24 == 1524)  
+t29=which(new_covar$f.20002.2.25 == 1524)  
+u29=which(new_covar$f.20002.2.26 == 1524)  
+v29=which(new_covar$f.20002.2.27 == 1524)  
+w29=which(new_covar$f.20002.2.28 == 1524)  
+x29=which(new_covar$f.20002.2.29 == 1524)   
+y29=which(new_covar$f.20002.2.30 == 1524)  
+z29=which(new_covar$f.20002.2.31 == 1524)  
+a30=which(new_covar$f.20002.2.32 == 1524)   
+b30=which(new_covar$f.20002.2.33 == 1524)
+
+##SUBDURAL HEMATOMA
+c30=which(new_covar$f.20002.2.0 == 1083)  # at the first position in the array, who reported a subdural hematoma code (1083)?
+d30=which(new_covar$f.20002.2.1 == 1083)  # at the second position
+e30=which(new_covar$f.20002.2.2 == 1083)  # and so on to the maximum extent of 
+f30=which(new_covar$f.20002.2.3 == 1083) 
+g30=which(new_covar$f.20002.2.4 == 1083)  
+h30=which(new_covar$f.20002.2.5 == 1083)  
+i30=which(new_covar$f.20002.2.6 == 1083)  
+j30=which(new_covar$f.20002.2.7 == 1083)  
+k30=which(new_covar$f.20002.2.8 == 1083)  
+l30=which(new_covar$f.20002.2.9 == 1083)  
+m30=which(new_covar$f.20002.2.10 == 1083)  
+n30=which(new_covar$f.20002.2.11 == 1083)   
+o30=which(new_covar$f.20002.2.12 == 1083)  
+p30=which(new_covar$f.20002.2.13 == 1083)  
+q30=which(new_covar$f.20002.2.14 == 1083)   
+r30=which(new_covar$f.20002.2.15 == 1083)  
+s30=which(new_covar$f.20002.2.16 == 1083)  
+t30=which(new_covar$f.20002.2.17 == 1083)   
+u30=which(new_covar$f.20002.2.18 == 1083)  
+v30=which(new_covar$f.20002.2.19 == 1083)  
+w30=which(new_covar$f.20002.2.20 == 1083)  
+x30=which(new_covar$f.20002.2.21 == 1083)  
+y30=which(new_covar$f.20002.2.22 == 1083)  
+z30=which(new_covar$f.20002.2.23 == 1083)  
+a31=which(new_covar$f.20002.2.24 == 1083)  
+b31=which(new_covar$f.20002.2.25 == 1083)  
+c31=which(new_covar$f.20002.2.26 == 1083)  
+d31=which(new_covar$f.20002.2.27 == 1083)  
+e31=which(new_covar$f.20002.2.28 == 1083)  
+f31=which(new_covar$f.20002.2.29 == 1083)   
+g31=which(new_covar$f.20002.2.30 == 1083)  
+h31=which(new_covar$f.20002.2.31 == 1083)  
+i31=which(new_covar$f.20002.2.32 == 1083)   
+j31=which(new_covar$f.20002.2.33 == 1083)
+
+##SUBARACHNOID HAEMORRHAGE
+k31=which(new_covar$f.20002.2.0 == 1086)  # at the first position in the array, who reported a subarachnoid haemorrhage code (1086)?
+l31=which(new_covar$f.20002.2.1 == 1086)  # at the second position
+m31=which(new_covar$f.20002.2.2 == 1086)  # and so on to the maximum extent of 
+n31=which(new_covar$f.20002.2.3 == 1086) 
+o31=which(new_covar$f.20002.2.4 == 1086)  
+p31=which(new_covar$f.20002.2.5 == 1086)  
+q31=which(new_covar$f.20002.2.6 == 1086)  
+r31=which(new_covar$f.20002.2.7 == 1086)  
+s31=which(new_covar$f.20002.2.8 == 1086)  
+t31=which(new_covar$f.20002.2.9 == 1086)  
+u31=which(new_covar$f.20002.2.10 == 1086)  
+v31=which(new_covar$f.20002.2.11 == 1086)   
+w31=which(new_covar$f.20002.2.12 == 1086)  
+x31=which(new_covar$f.20002.2.13 == 1086)  
+y31=which(new_covar$f.20002.2.14 == 1086)   
+z31=which(new_covar$f.20002.2.15 == 1086)  
+a32=which(new_covar$f.20002.2.16 == 1086)  
+b32=which(new_covar$f.20002.2.17 == 1086)   
+c32=which(new_covar$f.20002.2.18 == 1086)  
+d32=which(new_covar$f.20002.2.19 == 1086)  
+e32=which(new_covar$f.20002.2.20 == 1086)  
+f32=which(new_covar$f.20002.2.21 == 1086)  
+g32=which(new_covar$f.20002.2.22 == 1086)  
+h32=which(new_covar$f.20002.2.23 == 1086)  
+i32=which(new_covar$f.20002.2.24 == 1086)  
+j32=which(new_covar$f.20002.2.25 == 1086)  
+k32=which(new_covar$f.20002.2.26 == 1086)  
+l32=which(new_covar$f.20002.2.27 == 1086)  
+m32=which(new_covar$f.20002.2.28 == 1086)  
+n32=which(new_covar$f.20002.2.29 == 1086)   
+o32=which(new_covar$f.20002.2.30 == 1086)  
+p32=which(new_covar$f.20002.2.31 == 1086)  
+q32=which(new_covar$f.20002.2.32 == 1086)   
+r32=which(new_covar$f.20002.2.33 == 1086)
+
+##TRANSIENT ISCHAEMIC ATTACK
+s32=which(new_covar$f.20002.2.0 == 1082)  # at the first position in the array, who reported a transient ischaemic attack code (1082)?
+t32=which(new_covar$f.20002.2.1 == 1082)  # at the second position
+u32=which(new_covar$f.20002.2.2 == 1082)  # and so on to the maximum extent of 
+v32=which(new_covar$f.20002.2.3 == 1082) 
+w32=which(new_covar$f.20002.2.4 == 1082)  
+x32=which(new_covar$f.20002.2.5 == 1082)  
+y32=which(new_covar$f.20002.2.6 == 1082)  
+z32=which(new_covar$f.20002.2.7 == 1082)  
+a33=which(new_covar$f.20002.2.8 == 1082)  
+b33=which(new_covar$f.20002.2.9 == 1082)  
+c33=which(new_covar$f.20002.2.10 == 1082)  
+d33=which(new_covar$f.20002.2.11 == 1082)   
+e33=which(new_covar$f.20002.2.12 == 1082)  
+f33=which(new_covar$f.20002.2.13 == 1082)  
+g33=which(new_covar$f.20002.2.14 == 1082)   
+h33=which(new_covar$f.20002.2.15 == 1082)  
+i33=which(new_covar$f.20002.2.16 == 1082)  
+j33=which(new_covar$f.20002.2.17 == 1082)   
+k33=which(new_covar$f.20002.2.18 == 1082)  
+l33=which(new_covar$f.20002.2.19 == 1082)  
+m33=which(new_covar$f.20002.2.20 == 1082)  
+n33=which(new_covar$f.20002.2.21 == 1082)  
+o33=which(new_covar$f.20002.2.22 == 1082)  
+p33=which(new_covar$f.20002.2.23 == 1082)  
+q33=which(new_covar$f.20002.2.24 == 1082)  
+r33=which(new_covar$f.20002.2.25 == 1082)  
+s33=which(new_covar$f.20002.2.26 == 1082)  
+t33=which(new_covar$f.20002.2.27 == 1082)  
+u33=which(new_covar$f.20002.2.28 == 1082)  
+v33=which(new_covar$f.20002.2.29 == 1082)   
+w33=which(new_covar$f.20002.2.30 == 1082)  
+x33=which(new_covar$f.20002.2.31 == 1082)  
+y33=which(new_covar$f.20002.2.32 == 1082)   
+z33=which(new_covar$f.20002.2.33 == 1082)
+
+#Once that is done for each diagnosis, you can then remove those from the dataset (ensuring you pass them to unique() first!), e.g. :
+x <- c(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z,
+       a1,b1,c1,d1,e1,f1,g1,h1,i1,j1,k1,l1,m1,n1,o1,p1,q1,r1,s1,t1,u1,v1,w1,x1,y1,z1,
+       a2,b2,c2,d2,e2,f2,g2,h2,i2,j2,k2,l2,m2,n2,o2,p2,q2,r2,s2,t2,u2,v2,w2,x2,y2,z2,
+       a3,b3,c3,d3,e3,f3,g3,h3,i3,j3,k3,l3,m3,n3,o3,p3,q3,r3,s3,t3,u3,v3,w3,x3,y3,z3,
+       a4,b4,c4,d4,e4,f4,g4,h4,i4,j4,k4,l4,m4,n4,o4,p4,q4,r4,s4,t4,u4,v4,w4,x4,y4,z4,
+       a5,b5,c5,d5,e5,f5,g5,h5,i5,j5,k5,l5,m5,n5,o5,p5,q5,r5,s5,t5,u5,v5,w5,x5,y5,z5,
+       a6,b6,c6,d6,e6,f6,g6,h6,i6,j6,k6,l6,m6,n6,o6,p6,q6,r6,s6,t6,u6,v6,w6,x6,y6,z6,
+       a7,b7,c7,d7,e7,f7,g7,h7,i7,j7,k7,l7,m7,n7,o7,p7,q7,r7,s7,t7,u7,v7,w7,x7,y7,z7,
+       a8,b8,c8,d8,e8,f8,g8,h8,i8,j8,k8,l8,m8,n8,o8,p8,q8,r8,s8,t8,u8,v8,w8,x8,y8,z8,
+       a9,b9,c9,d9,e9,f9,g9,h9,i9,j9,k9,l9,m9,n9,o9,p9,q9,r9,s9,t9,u9,v9,w9,x9,y9,z9,
+       a10,b10,c10,d10,e10,f10,g10,h10,i10,j10,k10,l10,m10,n10,o10,p10,q10,r10,s10,t10,u10,v10,w10,x10,y10,z10,
+       a11,b11,c11,d11,e11,f11,g11,h11,i11,j11,k11,l11,m11,n11,o11,p11,q11,r11,s11,t11,u11,v11,w11,x11,y11,z11,
+       a12,b12,c12,d12,e12,f12,g12,h12,i12,j12,k12,l12,m12,n12,o12,p12,q12,r12,s12,t12,u12,v12,w12,x12,y12,z12,
+       a13,b13,c13,d13,e13,f13,g13,h13,i13,j13,k13,l13,m13,n13,o13,p13,q13,r13,s13,t13,u13,v13,w13,x13,y13,z13,
+       a14,b14,c14,d14,e14,f14,g14,h14,i14,j14,k14,l14,m14,n14,o14,p14,q14,r14,s14,t14,u14,v14,w14,x14,y14,z14,
+       a15,b15,c15,d15,e15,f15,g15,h15,i15,j15,k15,l15,m15,n15,o15,p15,q15,r15,s15,t15,u15,v15,w15,x15,y15,z15,
+       a16,b16,c16,d16,e16,f16,g16,h16,i16,j16,k16,l16,m16,n16,o16,p16,q16,r16,s16,t16,u16,v16,w16,x16,y16,z16,
+       a17,b17,c17,d17,e17,f17,g17,h17,i17,j17,k17,l17,m17,n17,o17,p17,q17,r17,s17,t17,u17,v17,w17,x17,y17,z17,
+       a18,b18,c18,d18,e18,f18,g18,h18,i18,j18,k18,l18,m18,n18,o18,p18,q18,r18,s18,t18,u18,v18,w18,x18,y18,z18,
+       a19,b19,c19,d19,e19,f19,g19,h19,i19,j19,k19,l19,m19,n19,o19,p19,q19,r19,s19,t19,u19,v19,w19,x19,y19,z19,
+       a20,b20,c20,d20,e20,f20,g20,h20,i20,j20,k20,l20,m20,n20,o20,p20,q20,r20,s20,t20,u20,v20,w20,x20,y20,z20,
+       a21,b21,c21,d21,e21,f21,g21,h21,i21,j21,k21,l21,m21,n21,o21,p21,q21,r21,s21,t21,u21,v21,w21,x21,y21,z21,
+       a22,b22,c22,d22,e22,f22,g22,h22,i22,j22,k22,l22,m22,n22,o22,p22,q22,r22,s22,t22,u22,v22,w22,x22,y22,z22,
+       a23,b23,c23,d23,e23,f23,g23,h23,i23,j23,k23,l23,m23,n23,o23,p23,q23,r23,s23,t23,u23,v23,w23,x23,y23,z23,
+       a24,b24,c24,d24,e24,f24,g24,h24,i24,j24,k24,l24,m24,n24,o24,p24,q24,r24,s24,t24,u24,v24,w24,x24,y24,z24,
+       a25,b25,c25,d25,e25,f25,g25,h25,i25,j25,k25,l25,m25,n25,o25,p25,q25,r25,s25,t25,u25,v25,w25,x25,y25,z25,
+       a26,b26,c26,d26,e26,f26,g26,h26,i26,j26,k26,l26,m26,n26,o26,p26,q26,r26,s26,t26,u26,v26,w26,x26,y26,z26,
+       a27,b27,c27,d27,e27,f27,g27,h27,i27,j27,k27,l27,m27,n27,o27,p27,q27,r27,s27,t27,u27,v27,w27,x27,y27,z27,
+       a28,b28,c28,d28,e28,f28,g28,h28,i28,j28,k28,l28,m28,n28,o28,p28,q28,r28,s28,t28,u28,v28,w28,x28,y28,z28,
+       a29,b29,c29,d29,e29,f29,g29,h29,i29,j29,k29,l29,m29,n29,o29,p29,q29,r29,s29,t29,u29,v29,w29,x29,y29,z29,
+       a30,b30,c30,d30,e30,f30,g30,h30,i30,j30,k30,l30,m30,n30,o30,p30,q30,r30,s30,t30,u30,v30,w30,x30,y30,z30,
+       a31,b31,c31,d31,e31,f31,g31,h31,i31,j31,k31,l31,m31,n31,o31,p31,q31,r31,s31,t31,u31,v31,w31,x31,y31,z31,
+       a32,b32,c32,d32,e32,f32,g32,h32,i32,j32,k32,l32,m32,n32,o32,p32,q32,r32,s32,t32,u32,v32,w32,x32,y32,z32,
+       a33,b33,c33,d33,e33,f33,g33,h33,i33,j33,k33,l33,m33,n33,o33,p33,q33,r33,s33,t33,u33,v33,w33,x33,y33,z33)
+
+a = unique(x)
+
+nrow(new_covar)
+new_covar = new_covar[-a,]
+nrow(new_covar)
+
+new_covar <- new_covar[,c("f.eid","SysBP","DiaBP","f.6138.2.0")] #drop irrel var
+
+##########################
+####SMOKING SECTION#######
+#current smoking
+summary(all_pheno$f.1239.2.0)
+table(all_pheno$f.1239.2.0)
+#https://biobank.ctsu.ox.ac.uk/crystal/field.cgi?id=1239
+#1? = yes, on most or all days (39,250)
+#2? = only occasionally (13,735)
+#0 = no (448,310)
+#-3 prefer not to answer? (429)
+
+#f.31.0.0 = sex
+# f.34.0.0            year of birth
+# f.52.0.0            month of birth
+# 3456-2.0 n cigs currently smoked daily (current cigarette smokers)
+# 2887-2.0 n cigs previously smoked daily (past manufactured/hand rolled cigarettes)
+# 6183-2.0 n cigs previously smoked daily (current cigar/pipe smokers)
+# 1239-2.0 n current tobacco smoking (prefer not to answer, no, yes, on most days, only occasionally)
+
+pheno_subset <- all_pheno[,c("f.eid","f.31.0.0", "f.738.2.0", "f.21000.0.0","f.2644.2.0", "f.1239.0.0", "f.1249.2.0", "f.1239.2.0", "f.6183.2.0",
+				"f.3456.2.0", "f.2887.2.0", "f.3436.2.0","f.2867.2.0", "f.5959.2.0", "f.2877.2.0", "f.2897.2.0", "f.21001.2.0", "f.1558.2.0",
+				 "f.4440.2.0", "f.4407.2.0", "f.4451.2.0", "f.4418.2.0", "f.4429.2.0", "f.4462.2.0", 
+				"f.1598.2.0", "f.1568.2.0", "f.1608.2.0", "f.1578.2.0", "f.1588.2.0", "f.5364.2.0", "f.48.2.0", "f.49.2.0")]
+myData <- merge(pheno_subset,T1_subset,by="f.eid")
+nrow(myData)
+
+myData <- merge(myData,new_covar,by="f.eid")
+nrow(myData)
+
+##complete cases of white matter data##
+myData <- myData[complete.cases(myData$f.25008.2.0),] #WM Vol complete cases for neuroimaging data (Pheno comes later)
+nrow(myData) #21407
+myData <- myData[complete.cases(myData$f.25488.2.0),] # acoustic radiation complete cases for neuroimaging data (Pheno comes later)
+nrow(myData) #19395
+myData <- myData[complete.cases(myData$f.25781.2.0),] #drop 43 missing WMH volume
+nrow(myData)
+
+####RECODE ETHNICITY VARIABLE 0 = WHITE, 1 = NON-WHITE####
+myData$f.21000.0.0[myData$f.21000.0.0==1001] <- 1
+myData$f.21000.0.0[myData$f.21000.0.0==1002] <- 1
+myData$f.21000.0.0[myData$f.21000.0.0==1003] <- 1
+myData$f.21000.0.0[myData$f.21000.0.0==1] <- 0
+myData$f.21000.0.0[myData$f.21000.0.0==3] <- 2
+myData$f.21000.0.0[myData$f.21000.0.0==4] <- 2
+myData$f.21000.0.0[myData$f.21000.0.0==5] <- 2
+myData$f.21000.0.0[myData$f.21000.0.0==6] <- 2
+myData$f.21000.0.0[myData$f.21000.0.0>1003] <- 2
+myData$f.21000.0.0[myData$f.21000.0.0==2] <- 1
+
+###exclude missing 
+myData <- myData[complete.cases(myData$f.21000.0.0),]
+#Remove do not know/prefer not to answer
+myData <- myData[!myData$f.21000.0.0 < 0,]
+nrow(myData) #58
+
+##
+myData <- myData[complete.cases(myData$f.1239.2.0),] #drop 134 who did not answer first smoking question
+nrow(myData)
+
+#### EXCLUDE CIGAR SMOKERS THAT NEVER SMOKED HAND-ROLLED OR MANUFACTURED CIGS ON MOST DAYS (b/c hard to know their exposure) ###
+myData <- myData[!grepl(-3, myData$f.5959.2.0),] #0 (or -3 prefer not to answer) on # 5959.2.0 Previously smoked cigarettes on most/all days (triggered by answering cigars to 3446-2.0)
+myData <- myData[!grepl(0, myData$f.5959.2.0),] 
+myData <- myData[!grepl(-3, myData$f.1239.2.0),] #excluding for prefer not to answer
+myData <- myData[!grepl(-3, myData$f.2877.2.0),]
+myData$noncurrentsmoker[myData$f.1239.2.0==1] <- 1
+myData$noncurrentsmoker[myData$f.1239.2.0==0] <- 1
+myData$typeprev[myData$f.2877.2.0==3] <- 1
+myData$typeprev[myData$f.2877.2.0==-7] <- 1
+myData$cigartoexclude <- myData$noncurrentsmoker + myData$typeprev
+myData <- myData[!grepl(2, myData$cigartoexclude),] 
+myData$noncurrentsmoker <- NULL
+myData$typeprev <- NULL
+myData$cigartoexclude <- NULL
+
+##### Create smoke consumption Lifetime (INCLUDING PREVIOUS CPD FOR CURRENT CIGAR SMOKERS) #####
+myData$cons_lt <- ifelse(!is.na(myData$f.3456.2.0), myData$f.3456.2.0, ifelse(!is.na(myData$f.2887.2.0), myData$f.2887.2.0, myData$f.6183.2.0))
+table(myData$cons_lt, useNA = "ifany") #
+sum(table(myData$cons_lt))
+sum(table(myData$cons_lt, useNA = "ifany")) #
+myData <- myData[!grepl(-10, myData$cons_lt),] #Remove those who said less than 1 per day (-10) because they already said they smoke(d) on most or all days
+myData <- myData[!grepl(-1, myData$cons_lt),] #remove -1 (I do not know)
+myData$cons_lt[is.na(myData$cons_lt)] <- 0 #Recode NA to 0 so all subj are included in analyses
+myData$cons_lt <- ifelse(myData$f.1239.2.0==1 & myData$cons_lt==0, NA, ifelse(myData$f.1249.2.0==1 & myData$cons_lt==0, NA, myData$cons_lt))  #REMOVE THOSE WHO SAID SMOKING (past or present) most or all days but have a 0 for consumption (b/c missing value)
+myData <- myData[complete.cases(myData$cons_lt),] #drop these missing values
+
+###################################################              
+##### Calc age started smoking #####
+myData <- myData[!grepl(-3, myData$f.3436.2.0),] #remove prefer not to answer
+myData <- myData[!grepl(-3, myData$f.2867.2.0),] #remove prefer not to answer
+myData <- myData[!grepl(-1, myData$f.3436.2.0),] #remove do not know
+myData <- myData[!grepl(-1, myData$f.2867.2.0),] #remove do not know
+myData$age_init <- ifelse(!is.na(myData$f.3436.2.0), myData$f.3436.2.0, myData$f.2867.2.0)
+table(myData$age_init, useNA = "ifany") 
+sum(table(myData$age_init)) 
+sum(table(myData$age_init, useNA = "ifany")) 
+myData <- myData[!grepl(-3, myData$age_init),] #remove prefer not to answer
+
+#read in dataset of calc age
+#AGE$age_at_asst3 (age at assessment 3, neuroimaging)
+setwd("FILEPATH")
+AGE <- fread("UKB_AGE_calc_v2.csv") #automatically detects header and separator
+AGE <- AGE[,c("f.eid", "age_at_asst3")]
+
+myData <- merge(myData,AGE,by="f.eid")
+myData$age_at_asst3 <- as.numeric(myData$age_at_asst3)
+myData <- myData[!grepl(-1, myData$f.2897.2.0),] #remove do not know
+myData$duration <- ifelse(myData$f.1239.2.0==1, myData$age_at_asst3-myData$age_init, ifelse(myData$f.1249.2.0==1, myData$f.2897.2.0-myData$age_init, NA)) #for now this includes cigar smokers lumped in with cigarette smokers
+#Field 1249 was collected from all participants except those who indicated they currently smoke on most or all days, as defined by their answers to Field 1239
+table(myData$duration)
+#^Note the 0s are likely from people who started and stopped smoking at the same age (myData$f.2897.2.0-myData$age_init); current decision is to drop these
+myData <- myData[!grepl(0, myData$duration),]  
+#^NOTE THIS IN THE METHODS MAYBE CHANGE MIND ON THIS..
+myData$duration[is.na(myData$duration)] <- 0 #Recode NA to 0 so all subj are included in analyses
+
+nrow(myData[complete.cases(age_at_asst3),])
+nrow(myData)
+
+##Calc time since quitting (all current smokers are 0, former are >0, and never should be missing??<- verify this is ok)
+##NOTE I AM NOT USING f.6194.2.0 = current cigar smokers on most days that used to smoke cigarettes? "How old were you when you last smoked cigarettes on most days?"
+#f.2897.2.0 = former smokers "How old were you when you last smoked on most days?"
+table(myData$f.2897.2.0)
+myData$f.2897.2.0[is.na(myData$f.2897.2.0)] <- 0 #recode NA to 0 
+myData$timesinceq <- ifelse(myData$f.2897.2.0>0, myData$age_at_asst3-myData$f.2897.2.0, 0)
+summary(myData$timesinceq)
+#Note after removing never smokers, the distribution is good
+
+###Excluding for missing primary DVs###
+myData <- myData[complete.cases(myData$cons_lt),]
+myData <- myData[complete.cases(myData$duration),]
+
+#drop subj ID
+myData <- subset(myData, select = -c(f.eid))
+
+########Extra data cleaning#########
+######CALC ALCOHOL CONSUMPTION MONTHLY AS COVARIATE######
+table(myData$f.1558.2.0, useNA = "ifany")
+sum(is.na(myData$f.1558.2.0)) 
+
+###change prefer not to answer/don't knows to missing
+myData$f.1558.2.0[myData$f.1558.2.0<0] <- NA
+myData$f.4440.2.0[myData$f.4440.2.0<0] <- NA
+myData$f.4407.2.0[myData$f.4407.2.0<0] <- NA
+myData$f.4451.2.0[myData$f.4451.2.0<0] <- NA
+myData$f.4418.2.0[myData$f.4418.2.0<0] <- NA
+myData$f.4429.2.0[myData$f.4429.2.0<0] <- NA
+myData$f.4462.2.0[myData$f.4462.2.0<0] <- NA
+myData$f.1598.2.0[myData$f.1598.2.0<0] <- NA
+myData$f.1568.2.0[myData$f.1568.2.0<0] <- NA
+myData$f.1608.2.0[myData$f.1608.2.0<0] <- NA
+myData$f.1578.2.0[myData$f.1578.2.0<0] <- NA
+myData$f.1588.2.0[myData$f.1588.2.0<0] <- NA
+myData$f.5364.2.0[myData$f.5364.2.0<0] <- NA
+
+#Recode frequency in order of severity with never == 0
+myData$f.1558.2.0[myData$f.1558.2.0==6] <- 0
+myData$f.1558.2.0[myData$f.1558.2.0==1] <- 6
+myData$f.1558.2.0[myData$f.1558.2.0==2] <- 5
+myData$f.1558.2.0[myData$f.1558.2.0==3] <- 4
+myData$f.1558.2.0[myData$f.1558.2.0==4] <- 3
+myData$f.1558.2.0[myData$f.1558.2.0==5] <- 2
+
+#Calculate total monthly consumption for session 2
+myData$MonthlyTotal.2 <- rowSums(myData[,c("f.4440.2.0", "f.4407.2.0", "f.4451.2.0", "f.4418.2.0", "f.4429.2.0", "f.4462.2.0")])
+table(myData$MonthlyTotal.2, useNA="ifany")
+
+#Calculate total weekly consumption and convert to monthly for session 2
+myData$WeeklyTotal.2 <- rowSums(myData[,c("f.1598.2.0", "f.1568.2.0", "f.1608.2.0", "f.1578.2.0", "f.1588.2.0", "f.5364.2.0")])
+myData$WeeklyTotal.2 <- myData$WeeklyTotal.2*4
+table(myData$MonthlyTotal.2, useNA="ifany")
+
+#Calculate monthly alcohol consumption
+myData$AlcCons <- ifelse(myData$f.1558.2.0==0,myData$f.1558.2.0,ifelse(!is.na(myData$MonthlyTotal.2), myData$MonthlyTotal.2, ifelse(!is.na(myData$WeeklyTotal.2), myData$WeeklyTotal.2, -111)))
+
+#Recode
+table(myData$AlcCons)
+myData$AlcCons[myData$AlcCons<0] <- NA
+table(myData$AlcCons)
+
+#######BMI & WHRatio###########
+table(myData$f.48.2.0) #waist circum
+table(myData$f.49.2.0) #hip circum
+sum(is.na(myData$f.48.2.0)) #note this is likely discrepant from total imaging numbers, usually it will have less missing than imaging because the imaging data takes longer for them to update/refresh
+sum(is.na(myData$f.49.2.0)) 
+sum(is.na(myData$f.21001.2.0)) #BMI for comparison
+
+myData$WHRatio <- myData$f.48.2.0/myData$f.49.2.0
+
+###Characterize current, ex, never smokers
+summary(myData$f.1239.2.0)
+summary(myData$f.1249.2.0)
+table(myData$f.1239.2.0)
+table(myData$f.1249.2.0)
+table(myData$cons_lt)
+nrow(myData)
+
+####REMOVE IRRELEVANT COLUMNS
+myData <- subset(myData, select = -c(f.1558.2.0, f.2644.2.0,f.1239.0.0, f.1249.2.0, f.1239.2.0,f.6183.2.0, f.3456.2.0, f.2887.2.0, f.3436.2.0,f.2867.2.0,f.5959.2.0,f.2877.2.0, f.2897.2.0, age_init, MonthlyTotal.2, WeeklyTotal.2, f.4440.2.0, f.4407.2.0, f.4451.2.0, f.4418.2.0, f.4429.2.0, f.4462.2.0,
+		f.1598.2.0, f.1568.2.0, f.1608.2.0, f.1578.2.0, f.1588.2.0, f.5364.2.0, f.48.2.0, f.49.2.0))
+
+#recode refuse to answer/do not know
+summary(myData$f.738.2.0)
+myData$f.738.2.0[myData$f.738.2.0<0] <- NA
+summary(myData$f.738.2.0)
+
+####PERCENT MISSING APPROACH ######
+#Calculate percent missing rows
+percentmiss = function(x) { sum(is.na(x)) / length(x) * 100 }
+missingsubjects = apply(myData,1,percentmiss)
+summary(missingsubjects)
+table(missingsubjects)
+
+#Calculate percent missing columns
+apply(myData,2,percentmiss)
+
+###IMPUTATION SECTION###
+set.seed(103)
+#first exclude predictors you don't want influencing imputation
+init = mice(myData, maxit=0)
+meth = init$method
+predM = init$predictorMatrix
+predM[, c("cons_lt","duration", "timesinceq","f.25008.2.0","f.25781.2.0","f.25756.2.0","f.25757.2.0","f.25758.2.0","f.25488.2.0",	"f.25489.2.0",	"f.25490.2.0",	"f.25491.2.0",	"f.25492.2.0",	"f.25493.2.0",	"f.25494.2.0",	"f.25495.2.0",	"f.25496.2.0",	"f.25497.2.0",	"f.25498.2.0",	"f.25499.2.0",	"f.25500.2.0",	"f.25501.2.0",	"f.25502.2.0",	"f.25503.2.0",	
+"f.25504.2.0",	"f.25505.2.0",	"f.25506.2.0",	"f.25507.2.0",	"f.25508.2.0",	"f.25509.2.0",	"f.25510.2.0",	"f.25511.2.0",	"f.25512.2.0",	"f.25513.2.0",	"f.25514.2.0",	"f.25515.2.0",	"f.25516.2.0",	"f.25517.2.0",	"f.25518.2.0",	"f.25519.2.0",	
+"f.25520.2.0",	"f.25521.2.0",	"f.25522.2.0",	"f.25523.2.0",	"f.25524.2.0",	"f.25525.2.0",	"f.25526.2.0",	"f.25527.2.0",	"f.25528.2.0",	"f.25529.2.0",	"f.25530.2.0",	"f.25531.2.0",	"f.25532.2.0",	"f.25533.2.0",	"f.25534.2.0",	"f.25535.2.0",	
+"f.25536.2.0",	"f.25537.2.0",	"f.25538.2.0",	"f.25539.2.0",	"f.25540.2.0",	"f.25541.2.0")]=0
+
+myData$f.31.0.0<-as.factor(myData$f.31.0.0)
+myData$f.21000.0.0<-as.factor(myData$f.21000.0.0)
+myData$f.6138.2.0<-as.factor(myData$f.6138.2.0)
+
+#impute
+imp.myData <- mice(myData, method=meth, predictorMatrix=predM, mech = "MNAR") #only use MNAR if think values are not missing at random
+imp.myData$meth
+densityplot(imp.myData, ~f.21001.2.0) ##LOOK OUT FOR IMPOSSIBLE VALUES (e.g., negative BMI)
+imp.myData <- complete(imp.myData)
+
+myData <- imp.myData
+
+##BASIC DESCRIPTIVE STATISTICS
+table(myData$f.31.0.0)
+table(myData$f.21000.0.0) #ethnicity
+table(myData$f.6138.2.0) #college
+summary(myData$age_at_asst3)
+sd(myData$age_at_asst3)
+summary(myData$f.21001.2.0)
+sd(myData$f.21001.2.0)
+summary(myData$f.738.2.0)
+sd(myData$f.738.2.0)
+summary(myData$WHRatio)
+sd(myData$WHRatio)
+summary(myData$SysBP)
+sd(myData$SysBP)
+summary(myData$DiaBP)
+sd(myData$DiaBP)
+summary(myData$AlcCons)
+sd(myData$AlcCons)
+summary(myData$f.25008.2.0) #WM volume
+sd(myData$f.25008.2.0) #WM volume
+summary(myData$f.25781.2.0) #WMH
+sd(myData$f.25781.2.0) #WMH
+
+#determine smoking stats
+myData1 <- myData
+myData1$cons_lt[myData1$cons_lt==0] <- NA 
+myData1$duration[myData1$duration==0] <- NA 
+myData1 <- myData1[complete.cases(myData1$cons_lt),] #complete cases for neuroimaging data
+summary(myData1$cons_lt)
+sd(myData1$cons_lt, na.rm = TRUE)
+myData1$duration <- round(myData1$duration)
+summary(myData1$duration)
+sd(myData1$duration, na.rm = TRUE)
+summary(myData1$timesinceq)
+sd(myData1$timesinceq, na.rm = TRUE)
+
+###LOG/SQRT TRANSFORM SECTION###
+skew(myData$AlcCons)
+kurtosis(myData$AlcCons)
+skew(myData$f.21001.2.0)
+kurtosis(myData$f.21001.2.0)
+skew(myData$WHRatio)
+kurtosis(myData$WHRatio)
+skew(myData$f.25781.2.0)
+kurtosis(myData$f.25781.2.0)
+
+myData$f.25781.2.0 <- log(myData$f.25781.2.0) #log transform WMH vol
+skew(myData$f.25781.2.0)
+summary(myData$f.25781.2.0) #WMH
+sd(myData$f.25781.2.0) #WMH
+
+myData$AlcCons <- sqrt(myData$AlcCons)
+skew(myData$AlcCons)
+kurtosis(myData$AlcCons)
+
+####################################################################
+#########ANALYSES#######
+library(glmnet)
+library(caret)
+library(dplyr)
+library(pscl)
+
+#####HUNB######
+myData <- myData %>% dplyr::select(cons_lt,duration,f.31.0.0,f.21000.0.0,f.6138.2.0, everything())
+myData <- myData %>% mutate_at(vars(-cons_lt,-duration,-f.31.0.0,-f.21000.0.0,-f.6138.2.0),scale)
+sapply(myData, class) #check typeof var
+
+myData$duration <- round(myData$duration)
+
+#https://www.rdocumentation.org/packages/pscl/versions/1.5.2/topics/hurdle
+#Use separate variables for each hurdle option to account for timesinceq
+
+#HURDLE MODELS FOR EVER SMOKER&CPD#
+HuNB_f.25781.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25781.2.0+timesinceq | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25781.2.0, data=myData, dist="negbin")
+HuNB_f.25008.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+timesinceq | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0, data=myData, dist="negbin")
+HuNB_f.25488.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25488.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25488.2.0, data=myData, dist="negbin")
+HuNB_f.25489.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25489.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25489.2.0, data=myData, dist="negbin")
+HuNB_f.25490.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25490.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25490.2.0, data=myData, dist="negbin")
+HuNB_f.25491.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25491.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25491.2.0, data=myData, dist="negbin")
+HuNB_f.25492.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25492.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25492.2.0, data=myData, dist="negbin")
+HuNB_f.25493.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25493.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25493.2.0, data=myData, dist="negbin")
+HuNB_f.25494.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25494.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25494.2.0, data=myData, dist="negbin")
+HuNB_f.25495.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25495.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25495.2.0, data=myData, dist="negbin")
+HuNB_f.25496.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25496.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25496.2.0, data=myData, dist="negbin")
+HuNB_f.25497.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25497.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25497.2.0, data=myData, dist="negbin")
+HuNB_f.25498.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25498.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25498.2.0, data=myData, dist="negbin")
+HuNB_f.25499.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25499.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25499.2.0, data=myData, dist="negbin")
+HuNB_f.25500.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25500.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25500.2.0, data=myData, dist="negbin")
+HuNB_f.25501.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25501.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25501.2.0, data=myData, dist="negbin")
+HuNB_f.25502.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25502.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25502.2.0, data=myData, dist="negbin")
+HuNB_f.25503.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25503.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25503.2.0, data=myData, dist="negbin")
+HuNB_f.25504.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25504.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25504.2.0, data=myData, dist="negbin")
+HuNB_f.25505.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25505.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25505.2.0, data=myData, dist="negbin")
+HuNB_f.25506.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25506.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25506.2.0, data=myData, dist="negbin")
+HuNB_f.25507.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25507.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25507.2.0, data=myData, dist="negbin")
+HuNB_f.25508.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25508.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25508.2.0, data=myData, dist="negbin")
+HuNB_f.25509.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25509.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25509.2.0, data=myData, dist="negbin")
+HuNB_f.25510.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25510.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25510.2.0, data=myData, dist="negbin")
+HuNB_f.25511.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25511.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25511.2.0, data=myData, dist="negbin")
+HuNB_f.25512.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25512.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25512.2.0, data=myData, dist="negbin")
+HuNB_f.25513.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25513.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25513.2.0, data=myData, dist="negbin")
+HuNB_f.25514.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25514.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25514.2.0, data=myData, dist="negbin")
+HuNB_f.25515.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25515.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25515.2.0, data=myData, dist="negbin")
+HuNB_f.25516.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25516.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25516.2.0, data=myData, dist="negbin")
+HuNB_f.25517.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25517.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25517.2.0, data=myData, dist="negbin")
+HuNB_f.25518.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25518.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25518.2.0, data=myData, dist="negbin")
+HuNB_f.25519.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25519.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25519.2.0, data=myData, dist="negbin")
+HuNB_f.25520.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25520.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25520.2.0, data=myData, dist="negbin")
+HuNB_f.25521.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25521.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25521.2.0, data=myData, dist="negbin")
+HuNB_f.25522.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25522.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25522.2.0, data=myData, dist="negbin")
+HuNB_f.25523.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25523.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25523.2.0, data=myData, dist="negbin")
+HuNB_f.25524.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25524.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25524.2.0, data=myData, dist="negbin")
+HuNB_f.25525.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25525.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25525.2.0, data=myData, dist="negbin")
+HuNB_f.25526.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25526.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25526.2.0, data=myData, dist="negbin")
+HuNB_f.25527.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25527.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25527.2.0, data=myData, dist="negbin")
+HuNB_f.25528.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25528.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25528.2.0, data=myData, dist="negbin")
+HuNB_f.25529.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25529.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25529.2.0, data=myData, dist="negbin")
+HuNB_f.25530.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25530.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25530.2.0, data=myData, dist="negbin")
+HuNB_f.25531.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25531.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25531.2.0, data=myData, dist="negbin")
+HuNB_f.25532.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25532.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25532.2.0, data=myData, dist="negbin")
+HuNB_f.25533.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25533.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25533.2.0, data=myData, dist="negbin")
+HuNB_f.25534.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25534.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25534.2.0, data=myData, dist="negbin")
+HuNB_f.25535.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25535.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25535.2.0, data=myData, dist="negbin")
+HuNB_f.25536.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25536.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25536.2.0, data=myData, dist="negbin")
+HuNB_f.25537.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25537.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25537.2.0, data=myData, dist="negbin")
+HuNB_f.25538.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25538.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25538.2.0, data=myData, dist="negbin")
+HuNB_f.25539.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25539.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25539.2.0, data=myData, dist="negbin")
+HuNB_f.25540.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25540.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25540.2.0, data=myData, dist="negbin")
+HuNB_f.25541.2.0_c <- hurdle(cons_lt ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25541.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25541.2.0, data=myData, dist="negbin")
+
+#HURDLE MODELS FOR EVER SMOKER&DURATION#
+HuNB_f.25781.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25781.2.0+timesinceq | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25781.2.0, data=myData, dist="negbin")
+HuNB_f.25008.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+timesinceq | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0, data=myData, dist="negbin")
+HuNB_f.25488.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25488.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25488.2.0, data=myData, dist="negbin")
+HuNB_f.25489.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25489.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25489.2.0, data=myData, dist="negbin")
+HuNB_f.25490.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25490.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25490.2.0, data=myData, dist="negbin")
+HuNB_f.25491.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25491.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25491.2.0, data=myData, dist="negbin")
+HuNB_f.25492.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25492.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25492.2.0, data=myData, dist="negbin")
+HuNB_f.25493.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25493.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25493.2.0, data=myData, dist="negbin")
+HuNB_f.25494.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25494.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25494.2.0, data=myData, dist="negbin")
+HuNB_f.25495.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25495.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25495.2.0, data=myData, dist="negbin")
+HuNB_f.25496.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25496.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25496.2.0, data=myData, dist="negbin")
+HuNB_f.25497.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25497.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25497.2.0, data=myData, dist="negbin")
+HuNB_f.25498.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25498.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25498.2.0, data=myData, dist="negbin")
+HuNB_f.25499.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25499.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25499.2.0, data=myData, dist="negbin")
+HuNB_f.25500.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25500.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25500.2.0, data=myData, dist="negbin")
+HuNB_f.25501.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25501.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25501.2.0, data=myData, dist="negbin")
+HuNB_f.25502.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25502.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25502.2.0, data=myData, dist="negbin")
+HuNB_f.25503.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25503.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25503.2.0, data=myData, dist="negbin")
+HuNB_f.25504.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25504.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25504.2.0, data=myData, dist="negbin")
+HuNB_f.25505.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25505.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25505.2.0, data=myData, dist="negbin")
+HuNB_f.25506.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25506.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25506.2.0, data=myData, dist="negbin")
+HuNB_f.25507.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25507.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25507.2.0, data=myData, dist="negbin")
+HuNB_f.25508.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25508.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25508.2.0, data=myData, dist="negbin")
+HuNB_f.25509.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25509.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25509.2.0, data=myData, dist="negbin")
+HuNB_f.25510.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25510.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25510.2.0, data=myData, dist="negbin")
+HuNB_f.25511.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25511.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25511.2.0, data=myData, dist="negbin")
+HuNB_f.25512.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25512.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25512.2.0, data=myData, dist="negbin")
+HuNB_f.25513.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25513.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25513.2.0, data=myData, dist="negbin")
+HuNB_f.25514.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25514.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25514.2.0, data=myData, dist="negbin")
+HuNB_f.25515.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25515.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25515.2.0, data=myData, dist="negbin")
+HuNB_f.25516.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25516.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25516.2.0, data=myData, dist="negbin")
+HuNB_f.25517.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25517.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25517.2.0, data=myData, dist="negbin")
+HuNB_f.25518.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25518.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25518.2.0, data=myData, dist="negbin")
+HuNB_f.25519.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25519.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25519.2.0, data=myData, dist="negbin")
+HuNB_f.25520.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25520.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25520.2.0, data=myData, dist="negbin")
+HuNB_f.25521.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25521.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25521.2.0, data=myData, dist="negbin")
+HuNB_f.25522.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25522.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25522.2.0, data=myData, dist="negbin")
+HuNB_f.25523.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25523.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25523.2.0, data=myData, dist="negbin")
+HuNB_f.25524.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25524.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25524.2.0, data=myData, dist="negbin")
+HuNB_f.25525.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25525.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25525.2.0, data=myData, dist="negbin")
+HuNB_f.25526.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25526.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25526.2.0, data=myData, dist="negbin")
+HuNB_f.25527.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25527.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25527.2.0, data=myData, dist="negbin")
+HuNB_f.25528.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25528.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25528.2.0, data=myData, dist="negbin")
+HuNB_f.25529.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25529.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25529.2.0, data=myData, dist="negbin")
+HuNB_f.25530.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25530.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25530.2.0, data=myData, dist="negbin")
+HuNB_f.25531.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25531.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25531.2.0, data=myData, dist="negbin")
+HuNB_f.25532.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25532.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25532.2.0, data=myData, dist="negbin")
+HuNB_f.25533.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25533.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25533.2.0, data=myData, dist="negbin")
+HuNB_f.25534.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25534.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25534.2.0, data=myData, dist="negbin")
+HuNB_f.25535.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25535.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25535.2.0, data=myData, dist="negbin")
+HuNB_f.25536.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25536.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25536.2.0, data=myData, dist="negbin")
+HuNB_f.25537.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25537.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25537.2.0, data=myData, dist="negbin")
+HuNB_f.25538.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25538.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25538.2.0, data=myData, dist="negbin")
+HuNB_f.25539.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25539.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25539.2.0, data=myData, dist="negbin")
+HuNB_f.25540.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25540.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25540.2.0, data=myData, dist="negbin")
+HuNB_f.25541.2.0_d <- hurdle(duration ~ age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+timesinceq+f.25541.2.0 | age_at_asst3+f.31.0.0+f.21000.0.0+f.21001.2.0+WHRatio+DiaBP+SysBP+f.6138.2.0+f.738.2.0+AlcCons+f.25756.2.0+f.25757.2.0+f.25758.2.0+f.25008.2.0+f.25781.2.0+f.25541.2.0, data=myData, dist="negbin")
+
+NOTE: To export results, save summary of all models, e.g., sink("HuNB_WM_WeightedM_output_cons.txt", append = FALSE, split = TRUE); followed by summary(HuNB_f.25781.2.0_c) etc.
+
+###SUPPLEMENTAL - correlation matrix
+###Cor matrix - all var
+library(Hmisc)
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+  )
+}
+res2<-rcorr(as.matrix(myData))
+res3 <- flattenCorrMatrix(res2$r, res2$P)
+fwrite(res3, "FILEPATH", na=".")
+
+###Cor matrix - only covar and global measures
+myData <- myData[,c("cons_lt","duration","age_at_asst3","f.31.0.0","f.21000.0.0", "f.21001.2.0", "WHRatio","SysBP","DiaBP","f.6138.2.0", "f.738.2.0", "AlcCons", "f.25756.2.0", "f.25757.2.0", "f.25758.2.0", "f.25781.2.0", "f.25008.2.0","timesinceq")] #drop irrel var
+myData$smokingstatus <- myData$cons_lt
+myData$smokingstatus[myData$smokingstatus>0] <- 1 #recode so its 1 = yes, 0 = no
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+  )
+}
+res2<-rcorr(as.matrix(myData))
+res3 <- flattenCorrMatrix(res2$r, res2$P)
+fwrite(res3, "FILEPATH", na=".")
+
+###conditional correlation coefficients
+##duration, CPD, and timesinceq in current/former smoker only sample
+myData$smokingstatus[myData$smokingstatus==0] <- NA
+myData <- myData[complete.cases(myData$smokingstatus),]
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+  )
+}
+res2<-rcorr(as.matrix(myData))
+res3 <- flattenCorrMatrix(res2$r, res2$P)
+fwrite(res3, "FILEPATH", na=".")
+
+
+
+
+
+
+
