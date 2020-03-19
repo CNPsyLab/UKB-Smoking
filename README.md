@@ -1,1 +1,1 @@
-# R syntax for the processing and analysis of data for the manuscript currently under review, "Associations of cigarette smoking with gray and white matter in the UK Biobank".
+# R syntax for the processing and analysis of data for the manuscript, "Associations of cigarette smoking with gray and white matter in the UK Biobank", which was published in Neuropsychopharmacology (https://www.nature.com/articles/s41386-020-0630-2).
